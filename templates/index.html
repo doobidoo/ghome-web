@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Familienzimmer - Google Home Controller</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Familienzimmer</h1>
+            <span class="status-dot" id="statusDot"></span>
+        </header>
+
+        <div class="player">
+            <!-- Album Art -->
+            <div class="album-art">
+                <img id="albumArt" src="" alt="Album Art">
+                <div class="no-art" id="noArt">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Track Info -->
+            <div class="track-info">
+                <h2 id="trackTitle">Nicht aktiv</h2>
+                <p id="trackArtist"></p>
+                <p id="trackAlbum" class="album"></p>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="progress-container">
+                <span id="currentTime">0:00</span>
+                <div class="progress-bar">
+                    <div class="progress" id="progress"></div>
+                </div>
+                <span id="duration">0:00</span>
+            </div>
+
+            <!-- Playback Controls -->
+            <div class="controls">
+                <button id="btnStop" class="control-btn" title="Stop">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M6 6h12v12H6z"/>
+                    </svg>
+                </button>
+                <button id="btnPlayPause" class="control-btn play-btn" title="Play/Pause">
+                    <svg viewBox="0 0 24 24" fill="currentColor" id="iconPlay">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    <svg viewBox="0 0 24 24" fill="currentColor" id="iconPause" style="display:none">
+                        <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                    </svg>
+                </button>
+                <button id="btnSkip" class="control-btn" title="Skip">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Volume Control -->
+            <div class="volume-control">
+                <button id="btnVolDown" class="vol-btn" title="Leiser">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/>
+                    </svg>
+                </button>
+                <input type="range" id="volumeSlider" min="0" max="100" value="50">
+                <button id="btnVolUp" class="vol-btn" title="Lauter">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                    </svg>
+                </button>
+                <span id="volumeValue">50%</span>
+            </div>
+
+            <!-- App Info -->
+            <div class="app-info">
+                <span id="appName"></span>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
