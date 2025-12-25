@@ -300,7 +300,6 @@ loadYouTubeVideos();
 const assistantElements = {
     input: document.getElementById('assistantInput'),
     btnSend: document.getElementById('btnAssistantSend'),
-    btnSpeak: document.getElementById('btnAssistantSpeak'),
     btnMic: document.getElementById('btnAssistantMic'),
     micIcon: document.getElementById('micIcon'),
     micActiveIcon: document.getElementById('micActiveIcon'),
@@ -308,8 +307,12 @@ const assistantElements = {
     indicator: document.getElementById('assistantIndicator'),
     statusText: document.getElementById('assistantStatusText'),
     autoPlayToggle: document.getElementById('autoPlayToggle'),
+    outputTargetToggle: document.getElementById('outputTargetToggle'),
+    outputIconBrowser: document.getElementById('outputIconBrowser'),
+    outputIconGHome: document.getElementById('outputIconGHome'),
     silenceDuration: document.getElementById('silenceDuration'),
-    silenceValue: document.getElementById('silenceValue')
+    silenceValue: document.getElementById('silenceValue'),
+    browserAudio: document.getElementById('browserAudio')
 };
 
 let assistantOnline = false;
@@ -482,6 +485,36 @@ if (assistantElements.btnMic) {
 
 // ==================== End Speech Recognition ====================
 
+// ==================== Output Target Toggle ====================
+
+// Load output target preference (false = Browser, true = Google Home)
+function loadOutputTargetPreference() {
+    const saved = localStorage.getItem('ghome_output_target');
+    if (saved !== null) {
+        assistantElements.outputTargetToggle.checked = saved === 'true';
+    }
+    updateOutputTargetUI();
+}
+
+// Save output target preference
+function saveOutputTargetPreference() {
+    localStorage.setItem('ghome_output_target', assistantElements.outputTargetToggle.checked);
+    updateOutputTargetUI();
+}
+
+// Update output target icons
+function updateOutputTargetUI() {
+    const isGoogleHome = assistantElements.outputTargetToggle.checked;
+    assistantElements.outputIconBrowser.style.opacity = isGoogleHome ? '0.4' : '1';
+    assistantElements.outputIconGHome.style.opacity = isGoogleHome ? '1' : '0.4';
+}
+
+// Initialize output target toggle
+loadOutputTargetPreference();
+assistantElements.outputTargetToggle.addEventListener('change', saveOutputTargetPreference);
+
+// ==================== End Output Target Toggle ====================
+
 // Load Auto-Play preference from localStorage
 function loadAutoPlayPreference() {
     const saved = localStorage.getItem('ghome_autoplay_tts');
@@ -530,7 +563,6 @@ async function sendTextMessage(text) {
     assistantElements.response.className = 'chat-response loading';
     assistantElements.response.innerHTML = 'Denke nach...';
     assistantElements.btnSend.disabled = true;
-    assistantElements.btnSpeak.disabled = true;
     assistantElements.btnMic.disabled = true;
 
     try {
@@ -556,22 +588,24 @@ async function sendTextMessage(text) {
     }
 
     assistantElements.btnSend.disabled = false;
-    assistantElements.btnSpeak.disabled = false;
     assistantElements.btnMic.disabled = false;
 }
 
-// Send with voice output to Google Home
+// Send with voice output - to Browser or Google Home based on toggle
 async function sendWithVoice(text) {
     if (!text.trim()) return;
 
+    const toGoogleHome = assistantElements.outputTargetToggle.checked;
+    const endpoint = toGoogleHome ? '/api/assistant/chat' : '/api/assistant/chat/browser';
+    const loadingText = toGoogleHome ? 'Generiere Antwort und sende an Google Home...' : 'Generiere Antwort...';
+
     assistantElements.response.className = 'chat-response loading';
-    assistantElements.response.innerHTML = 'Generiere Antwort und Audio...';
+    assistantElements.response.innerHTML = loadingText;
     assistantElements.btnSend.disabled = true;
-    assistantElements.btnSpeak.disabled = true;
     assistantElements.btnMic.disabled = true;
 
     try {
-        const response = await fetch('/api/assistant/chat', {
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text })
@@ -580,9 +614,17 @@ async function sendWithVoice(text) {
 
         if (data.success) {
             assistantElements.response.className = 'chat-response';
-            assistantElements.response.innerHTML = '<div class="user-message">Du: ' + escapeHtml(text) + '</div><div class="assistant-message">' + escapeHtml(data.message) + '</div>';
-            // Clear radio/youtube selection
-            document.querySelectorAll('.radio-btn, .yt-btn').forEach(btn => btn.classList.remove('active'));
+            assistantElements.response.innerHTML = '<div class="user-message">Du: ' + escapeHtml(text) + '</div><div class="assistant-message">' + escapeHtml(data.response || data.message) + '</div>';
+
+            // If browser playback, play the audio
+            if (!toGoogleHome && data.audio_url) {
+                playBrowserAudio(data.audio_url);
+            }
+
+            // Clear radio/youtube selection if playing on Google Home
+            if (toGoogleHome) {
+                document.querySelectorAll('.radio-btn, .yt-btn').forEach(btn => btn.classList.remove('active'));
+            }
         } else {
             assistantElements.response.className = 'chat-response error';
             assistantElements.response.textContent = data.error || 'Fehler bei der Verarbeitung';
@@ -593,9 +635,17 @@ async function sendWithVoice(text) {
     }
 
     assistantElements.btnSend.disabled = false;
-    assistantElements.btnSpeak.disabled = false;
     assistantElements.btnMic.disabled = false;
     assistantElements.input.value = '';
+}
+
+// Play audio in browser
+function playBrowserAudio(audioUrl) {
+    const audio = assistantElements.browserAudio;
+    audio.src = audioUrl;
+    audio.play().catch(err => {
+        console.error('Error playing audio:', err);
+    });
 }
 
 // Escape HTML to prevent XSS
@@ -618,19 +668,9 @@ function smartSend() {
 // Event listeners
 assistantElements.btnSend.addEventListener('click', smartSend);
 
-assistantElements.btnSpeak.addEventListener('click', () => {
-    sendWithVoice(assistantElements.input.value);
-});
-
 assistantElements.input.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
-        if (e.shiftKey) {
-            // Shift+Enter always plays on Google Home
-            sendWithVoice(assistantElements.input.value);
-        } else {
-            // Enter uses smart send (respects toggle)
-            smartSend();
-        }
+        smartSend();
     }
 });
 

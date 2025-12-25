@@ -118,6 +118,21 @@
                         <span class="setting-label">Auto-Play</span>
                     </div>
 
+                    <!-- Output Target Toggle -->
+                    <div class="setting-item output-toggle">
+                        <svg viewBox="0 0 24 24" fill="currentColor" class="setting-icon" id="outputIconBrowser" title="Browser">
+                            <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8h16v10z"/>
+                        </svg>
+                        <label class="toggle-switch small">
+                            <input type="checkbox" id="outputTargetToggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <svg viewBox="0 0 24 24" fill="currentColor" class="setting-icon" id="outputIconGHome" title="Google Home">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    </div>
+
                     <!-- Silence Duration -->
                     <div class="setting-item silence-setting">
                         <svg viewBox="0 0 24 24" fill="currentColor" class="setting-icon">
@@ -146,11 +161,6 @@
                                 <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
                             </svg>
                         </button>
-                        <button id="btnAssistantSpeak" class="assistant-btn speak-btn" title="Auf Google Home abspielen">
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
-                            </svg>
-                        </button>
                     </div>
                     <div class="chat-response" id="chatResponse">
                         <!-- Response will appear here -->
@@ -159,6 +169,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Hidden audio player for browser playback -->
+    <audio id="browserAudio" style="display:none"></audio>
 
     <script src="/static/app.js"></script>
 </body>

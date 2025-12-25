@@ -417,5 +417,38 @@ def assistant_chat_text():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/api/assistant/chat/browser', methods=['POST'])
+def assistant_chat_browser():
+    """
+    Chat with audio response for browser playback.
+    Returns audio URL without casting to Google Home.
+    """
+    data = request.get_json() or {}
+    text = data.get('text', '')
+
+    if not text:
+        return jsonify({"success": False, "error": "No text provided"}), 400
+
+    try:
+        # Get LLM response from Groq
+        response_text = get_groq_response(text)
+
+        # Generate TTS audio
+        filename, filepath = text_to_speech(response_text)
+
+        # Return audio URL for browser playback
+        audio_url = f"/audio/{filename}"
+
+        return jsonify({
+            "success": True,
+            "input": text,
+            "response": response_text,
+            "audio_url": audio_url,
+            "message": response_text
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
