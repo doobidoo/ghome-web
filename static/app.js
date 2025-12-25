@@ -412,7 +412,10 @@ function toggleSpeechRecognition() {
 }
 
 if (assistantElements.btnMic) {
-    assistantElements.btnMic.addEventListener('click', toggleSpeechRecognition);
+    assistantElements.btnMic.addEventListener('click', () => {
+        unlockAudio();
+        toggleSpeechRecognition();
+    });
 }
 
 // ==================== Auto-Play ====================
@@ -554,10 +557,49 @@ function setButtonsDisabled(disabled) {
     assistantElements.btnMic.disabled = disabled;
 }
 
+// iOS Safari audio unlock - must be called from user gesture
+let audioUnlocked = false;
+
+function unlockAudio() {
+    if (audioUnlocked) return;
+    const audio = assistantElements.browserAudio;
+    // Play silent audio to unlock
+    audio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRwmHAAAAAAD/+9DEAAAIAANIAAAAgAADSAAAAATEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//tQxB4AAADSAAAAAAAAANIAAAAATEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=';
+    audio.volume = 0.01;
+    audio.play().then(() => {
+        audio.pause();
+        audio.volume = 1;
+        audioUnlocked = true;
+        console.log('Audio unlocked for iOS Safari');
+    }).catch(() => {});
+}
+
 function playBrowserAudio(audioUrl) {
     const audio = assistantElements.browserAudio;
     audio.src = audioUrl;
-    audio.play().catch(err => console.error('Error playing audio:', err));
+    audio.load(); // Force reload for iOS
+
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+        playPromise.catch(err => {
+            console.error('Audio playback failed:', err);
+            // Show manual play button as fallback
+            showAudioFallback(audioUrl);
+        });
+    }
+}
+
+function showAudioFallback(audioUrl) {
+    const responseEl = assistantElements.response;
+    const playBtn = document.createElement('button');
+    playBtn.textContent = '▶ Audio abspielen';
+    playBtn.style.cssText = 'margin-top:8px;padding:8px 16px;background:var(--accent);color:#000;border:none;border-radius:4px;cursor:pointer;';
+    playBtn.onclick = () => {
+        assistantElements.browserAudio.src = audioUrl;
+        assistantElements.browserAudio.play();
+        playBtn.remove();
+    };
+    responseEl.appendChild(playBtn);
 }
 
 function escapeHtml(text) {
@@ -575,9 +617,15 @@ function smartSend() {
     }
 }
 
-assistantElements.btnSend.addEventListener('click', smartSend);
+assistantElements.btnSend.addEventListener('click', () => {
+    unlockAudio();
+    smartSend();
+});
 assistantElements.input.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') smartSend();
+    if (e.key === 'Enter') {
+        unlockAudio();
+        smartSend();
+    }
 });
 
 checkAssistantHealth();
