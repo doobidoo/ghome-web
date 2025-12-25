@@ -18,7 +18,8 @@ import edge_tts
 from config import (
     DEVICE, TTS_VOICE, ASSISTANT_PERSONA,
     RADIO_STATIONS, YOUTUBE_FAVORITES,
-    LOCAL_IP, LOCAL_PORT, MAX_HISTORY
+    LOCAL_IP, LOCAL_PORT, MAX_HISTORY,
+    MEMORY_STORE_PATTERNS, MEMORY_SKIP_PATTERNS, MEMORY_RECALL_PATTERNS
 )
 
 app = Flask(__name__)
@@ -34,56 +35,15 @@ SHODH_API_KEY = os.environ.get("SHODH_CLOUDFLARE_API_KEY", "")
 # In-memory conversation history
 conversation_history = []
 
-# Memory Trigger Patterns
-
-# Explicit memory storage triggers (German + English)
-MEMORY_STORE_PATTERNS = [
-    r"^merk dir[:\s]",
-    r"^merke dir[:\s]",
-    r"^speicher[:\s]",
-    r"^speichere[:\s]",
-    r"^remember[:\s]",
-    r"^vergiss nicht[:\s]",
-    r"^wichtig[:\s]",
-    r"^notiz[:\s]",
-    r"^info[:\s]",
-    r"^das ist wichtig[:\s]",
-]
-
-# Skip patterns - don't store these casual interactions
-MEMORY_SKIP_PATTERNS = [
-    r"^(hallo|hi|hey|guten tag|guten morgen|guten abend|servus|grüezi)[\s!.,]*$",
-    r"^wie geht.s",
-    r"^wie spät",
-    r"^wie ist das wetter",
-    r"^was ist die uhrzeit",
-    r"^danke",
-    r"^ok$",
-    r"^ja$",
-    r"^nein$",
-    r"^test$",
-]
-
-# Explicit recall triggers
-MEMORY_RECALL_PATTERNS = [
-    r"was weisst du (über|zu|von)",
-    r"erinnerst du dich",
-    r"was haben wir besprochen",
-    r"was habe ich dir gesagt",
-    r"was hast du dir gemerkt",
-    r"erinnere dich an",
-]
-
 def should_store_memory(text):
-    """Check if this message should be stored in memory."""
+    """Check if this message should be stored in memory.
+
+    Only stores with explicit trigger patterns like 'Merke dir:', 'Wichtig:', etc.
+    Casual conversations, questions, and entertainment requests are skipped.
+    """
     text_lower = text.lower().strip()
 
-    # Always store if explicit trigger
-    for pattern in MEMORY_STORE_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return True, "explicit"
-
-    # Never store if skip pattern
+    # Never store if skip pattern matches
     for pattern in MEMORY_SKIP_PATTERNS:
         if re.search(pattern, text_lower, re.IGNORECASE):
             return False, "skip"
@@ -92,11 +52,13 @@ def should_store_memory(text):
     if len(text_lower) < 10:
         return False, "too_short"
 
-    # Default: store if substantive (> 20 chars)
-    if len(text_lower) > 20:
-        return True, "substantive"
+    # Only store if explicit trigger
+    for pattern in MEMORY_STORE_PATTERNS:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return True, "explicit"
 
-    return False, "default"
+    # Default: don't store casual conversations
+    return False, "no_trigger"
 
 def should_recall_memory(text):
     """Check if we should actively search for memories."""

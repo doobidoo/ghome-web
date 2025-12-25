@@ -59,3 +59,68 @@ LOCAL_PORT = 5000
 
 # Conversation history
 MAX_HISTORY = 5
+
+# ==================== Memory Trigger Patterns ====================
+
+# Explicit memory storage triggers (German + English)
+MEMORY_STORE_PATTERNS = [
+    r"^merk dir[:\s]",
+    r"^merke dir[:\s]",
+    r"^speicher[:\s]",
+    r"^speichere[:\s]",
+    r"^remember[:\s]",
+    r"^vergiss nicht[:\s]",
+    r"^wichtig[:\s]",
+    r"^notiz[:\s]",
+    r"^info[:\s]",
+    r"^das ist wichtig[:\s]",
+]
+
+# Skip patterns - don't store these casual interactions
+MEMORY_SKIP_PATTERNS = [
+    # Greetings
+    r"^(hallo|hi|hey|guten tag|guten morgen|guten abend|servus|grüezi)[\s!.,]*$",
+    # Small talk
+    r"^wie geht.s",
+    r"^wie spät",
+    r"^wie ist das wetter",
+    r"^was ist die uhrzeit",
+    r"^danke",
+    r"^ok$",
+    r"^ja$",
+    r"^nein$",
+    r"^test$",
+    # Questions about the assistant (meta)
+    r"^wer bist (du|denn)",
+    r"^was bist du",
+    r"^was kannst du",
+    r"^wie heisst du",
+    r"^stell dich vor",
+    # Story/entertainment requests
+    r"erzähl.*(mir|uns|mal)",
+    r"^erzähle",
+    r"^sag.*(witz|joke|story|geschichte)",
+    r"^sing",
+    r"^mach.*spass",
+    # General info questions (not personal/project-specific)
+    r"^erkläre? (mir|uns|mal)",
+    r"^was ist (ein|eine|der|die|das)\s",
+    r"^wie funktioniert",
+    r"^warum ist",
+    r"^kannst du",
+    # Recall triggers (don't store the question itself)
+    r"was weisst du",
+    r"erinnerst du dich",
+    r"was habe ich.*gesagt",
+    r"was haben wir",
+]
+
+# Explicit recall triggers
+MEMORY_RECALL_PATTERNS = [
+    r"was weisst du (über|zu|von)",
+    r"erinnerst du dich",
+    r"was haben wir besprochen",
+    r"was habe ich dir gesagt",
+    r"was hast du dir gemerkt",
+    r"erinnere dich an",
+]
