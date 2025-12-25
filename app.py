@@ -7,23 +7,31 @@ import re
 import time
 import os
 import tempfile
+import asyncio
+import uuid
 import requests
 import shutil
 from flask import Flask, render_template, jsonify, request, send_from_directory
+from groq import Groq
+import edge_tts
 
 app = Flask(__name__)
 
 DEVICE = "Familienzimmer"
 
-# Voice Assistant API on HP EliteBook
-VOICE_ASSISTANT_API = "http://10.0.1.39:5001"
+# Groq API for LLM (set via environment variable)
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
+# Edge TTS Voice (German)
+TTS_VOICE = "de-CH-LeniNeural"  # Swiss German female voice
 
 # Audio files directory for casting
 AUDIO_DIR = "/tmp/ghome_audio"
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
-# Local server IP (for casting URLs)
-LOCAL_IP = "10.0.1.70"
+# Local server IP (for casting URLs) - Pi-Hole server
+LOCAL_IP = "10.0.1.56"
 LOCAL_PORT = 5000
 
 # Radio stations - name: stream URL
@@ -47,15 +55,10 @@ RADIO_STATIONS = {
 }
 
 # YouTube favorites - name: URL
-# Only tested/working videos here!
-# Note: Live streams don't work (DRM protected) - use regular videos only
-# Avoid special characters like / in names (URL routing issues)
 YOUTUBE_FAVORITES = {
-    # Worship compilations (regular videos, verified working)
     "Hillsong Worship 2h": "https://www.youtube.com/watch?v=ruI3dhJQamM",
     "Worship Songs 2h": "https://www.youtube.com/watch?v=wUm_WP6TH3o",
     "Hillsong Best 2024": "https://www.youtube.com/watch?v=_1HGZ_9aRhI",
-    # Jazz (verified working)
     "Smooth Jazz": "https://www.youtube.com/watch?v=U3n31M81RpE",
     "Jazz Fusion 70s-80s": "https://www.youtube.com/watch?v=DMI2Xh6tIIQ",
     "Rare Jazz Fusion": "https://www.youtube.com/watch?v=Qw7vOfDLBiQ",
@@ -70,11 +73,10 @@ def run_catt(command, *args, background=False):
     cmd = ["catt", "-d", DEVICE] + [command] + list(args)
     try:
         if background:
-            # For cast commands that serve files, run detached with nohup
             import os
             full_cmd = f"nohup {' '.join(cmd)} > /dev/null 2>&1 &"
             os.system(full_cmd)
-            time.sleep(2)  # Give catt time to start serving
+            time.sleep(2)
             return "", "", 0
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         return result.stdout, result.stderr, result.returncode
@@ -133,15 +135,11 @@ def parse_catt_info(output):
         elif key == "display_name":
             info["app"] = value
 
-    # Parse media_metadata for title, artist, album, image
     if "media_metadata:" in output:
         try:
-            # Find the media_metadata dict in output
             match = re.search(r"media_metadata:\s*(\{.*?\})\s*(?:subtitle|$)", output, re.DOTALL)
             if match:
-                # This is tricky - catt outputs Python dict format, not JSON
                 metadata_str = match.group(1)
-                # Try to extract title, artist, album with regex
                 title_match = re.search(r"'title':\s*['\"]([^'\"]+)['\"]", metadata_str)
                 artist_match = re.search(r"'artist':\s*['\"]([^'\"]+)['\"]", metadata_str)
                 album_match = re.search(r"'albumName':\s*['\"]([^'\"]+)['\"]", metadata_str)
@@ -153,7 +151,6 @@ def parse_catt_info(output):
                 if album_match:
                     info["album"] = album_match.group(1)
 
-                # Extract first image URL
                 img_match = re.search(r"'url':\s*['\"]([^'\"]+)['\"]", metadata_str)
                 if img_match:
                     info["image_url"] = img_match.group(1)
@@ -183,7 +180,6 @@ def get_info():
 
     info = parse_catt_info(stdout)
 
-    # If playing radio, override title/artist with station info
     if current_source["type"] == "radio" and current_source["name"]:
         if not info["title"] or "mp3" in info["title"].lower() or "stream" in info["title"].lower():
             info["title"] = current_source["name"]
@@ -191,7 +187,6 @@ def get_info():
             info["album"] = ""
             info["app"] = "Radio"
 
-    # Include source info
     info["source_type"] = current_source["type"]
     info["source_name"] = current_source["name"]
 
@@ -260,9 +255,8 @@ def play_radio(station):
     if station not in RADIO_STATIONS:
         return jsonify({"success": False, "message": "Station not found"}), 404
 
-    # Stop current playback first for clean switch
     run_catt("stop")
-    time.sleep(1)  # Give device time to stop
+    time.sleep(1)
 
     url = RADIO_STATIONS[station]
     stdout, stderr, code = run_catt("cast", url)
@@ -285,9 +279,8 @@ def play_youtube(name):
     if name not in YOUTUBE_FAVORITES:
         return jsonify({"success": False, "message": f"Video '{name}' not found"}), 404
 
-    # Stop current playback first for clean switch
     run_catt("stop")
-    time.sleep(1)  # Give device time to stop
+    time.sleep(1)
 
     url = YOUTUBE_FAVORITES[name]
     stdout, stderr, code = run_catt("cast", url)
@@ -297,28 +290,73 @@ def play_youtube(name):
 
     return jsonify({"success": code == 0, "name": name, "message": stderr if code != 0 else f"Playing {name}"})
 
-# ==================== Voice Assistant Endpoints ====================
+# ==================== Voice Assistant (Groq + Edge TTS) ====================
+
+def get_groq_response(text):
+    """Get response from Groq LLM."""
+    if not groq_client:
+        return "Fehler: GROQ_API_KEY Umgebungsvariable nicht gesetzt."
+    try:
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Du bist ein hilfreicher Assistent. Antworte kurz und prägnant auf Deutsch. Halte deine Antworten unter 3 Sätzen."
+                },
+                {
+                    "role": "user",
+                    "content": text
+                }
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.7,
+            max_tokens=200,
+        )
+        return chat_completion.choices[0].message.content
+    except Exception as e:
+        return f"Fehler bei der Verarbeitung: {str(e)}"
+
+async def generate_tts_audio(text, output_file):
+    """Generate TTS audio using Edge TTS."""
+    communicate = edge_tts.Communicate(text, TTS_VOICE)
+    await communicate.save(output_file)
+
+def text_to_speech(text):
+    """Convert text to speech and return audio file path."""
+    filename = f"assistant_{uuid.uuid4().hex[:8]}.mp3"
+    filepath = os.path.join(AUDIO_DIR, filename)
+    
+    # Run async TTS
+    asyncio.run(generate_tts_audio(text, filepath))
+    
+    return filename, filepath
 
 @app.route('/api/assistant/health')
 def assistant_health():
-    """Check if Voice Assistant API is available."""
+    """Check if Voice Assistant is available."""
+    if not groq_client:
+        return jsonify({"api_available": False, "error": "GROQ_API_KEY not set"})
     try:
-        resp = requests.get(f"{VOICE_ASSISTANT_API}/health", timeout=5)
-        data = resp.json()
-        data["api_available"] = True
-        return jsonify(data)
+        # Test Groq connection
+        test = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": "test"}],
+            model="llama-3.3-70b-versatile",
+            max_tokens=5,
+        )
+        return jsonify({
+            "api_available": True,
+            "llm": "Groq (llama-3.3-70b)",
+            "tts": "Edge TTS",
+            "voice": TTS_VOICE
+        })
     except Exception as e:
         return jsonify({"api_available": False, "error": str(e)})
 
 @app.route('/api/assistant/chat', methods=['POST'])
 def assistant_chat():
     """
-    Send text to Voice Assistant, get audio URL, cast to Google Home.
-
-    The audio is hosted on HP EliteBook (10.0.1.39:5001) which Google Home
-    can reach, unlike local HTTP servers.
-
-    Request JSON: {"text": "Wie ist das Wetter?"}
+    Chat with voice output to Google Home.
+    Uses Groq for LLM and Edge TTS for speech synthesis.
     """
     global current_source
     data = request.get_json() or {}
@@ -328,33 +366,25 @@ def assistant_chat():
         return jsonify({"success": False, "error": "No text provided"}), 400
 
     try:
-        # Get audio URL from Voice Assistant API (audio hosted on HP EliteBook)
-        resp = requests.post(
-            f"{VOICE_ASSISTANT_API}/api/chat/url",
-            json={"text": text},
-            timeout=180
-        )
-
-        if resp.status_code != 200:
-            return jsonify({"success": False, "error": f"API error: {resp.status_code}"}), 500
-
-        result = resp.json()
-        if not result.get("success"):
-            return jsonify({"success": False, "error": result.get("error", "Unknown error")}), 500
-
-        audio_url = result.get("audio_url")
-        response_text = result.get("response", "")
-
+        # Get LLM response from Groq
+        response_text = get_groq_response(text)
+        
+        # Generate TTS audio
+        filename, filepath = text_to_speech(response_text)
+        
+        # Build audio URL
+        audio_url = f"http://{LOCAL_IP}:{LOCAL_PORT}/audio/{filename}"
+        
         # Stop current playback
         run_catt("stop")
         time.sleep(0.5)
-
-        # Cast audio via URL (Google Home fetches from HP EliteBook)
+        
+        # Cast audio to Google Home
         stdout, stderr, code = run_catt("cast", audio_url)
-
+        
         if code == 0:
             current_source = {"type": "assistant", "name": "Voice Assistant"}
-
+        
         return jsonify({
             "success": code == 0,
             "input": text,
@@ -363,17 +393,13 @@ def assistant_chat():
             "message": "Antwort wird abgespielt" if code == 0 else stderr
         })
 
-    except requests.Timeout:
-        return jsonify({"success": False, "error": "Voice Assistant timeout"}), 504
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/assistant/chat/text', methods=['POST'])
 def assistant_chat_text():
     """
-    Send text to Voice Assistant, get text response only (no audio).
-
-    Request JSON: {"text": "Was ist die Hauptstadt der Schweiz?"}
+    Chat with text response only (no audio).
     """
     data = request.get_json() or {}
     text = data.get('text', '')
@@ -382,22 +408,12 @@ def assistant_chat_text():
         return jsonify({"success": False, "error": "No text provided"}), 400
 
     try:
-        resp = requests.post(
-            f"{VOICE_ASSISTANT_API}/api/chat/text",
-            json={"text": text},
-            timeout=60
-        )
-
-        if resp.status_code != 200:
-            return jsonify({"success": False, "error": f"API error: {resp.status_code}"}), 500
-
-        result = resp.json()
+        response_text = get_groq_response(text)
         return jsonify({
             "success": True,
             "input": text,
-            "response": result.get("response", "")
+            "response": response_text
         })
-
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 

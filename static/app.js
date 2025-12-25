@@ -301,13 +301,203 @@ const assistantElements = {
     input: document.getElementById('assistantInput'),
     btnSend: document.getElementById('btnAssistantSend'),
     btnSpeak: document.getElementById('btnAssistantSpeak'),
+    btnMic: document.getElementById('btnAssistantMic'),
+    micIcon: document.getElementById('micIcon'),
+    micActiveIcon: document.getElementById('micActiveIcon'),
     response: document.getElementById('chatResponse'),
     indicator: document.getElementById('assistantIndicator'),
-    statusText: document.getElementById('assistantStatusText')
+    statusText: document.getElementById('assistantStatusText'),
+    autoPlayToggle: document.getElementById('autoPlayToggle'),
+    silenceDuration: document.getElementById('silenceDuration'),
+    silenceValue: document.getElementById('silenceValue')
 };
 
 let assistantOnline = false;
 let lastResponse = '';
+
+// ==================== Speech Recognition ====================
+
+let recognition = null;
+let isListening = false;
+let silenceTimer = null;
+let lastSpeechTime = null;
+let finalTranscript = '';
+
+// Get silence duration from slider (in ms)
+function getSilenceDuration() {
+    return parseFloat(assistantElements.silenceDuration.value) * 1000;
+}
+
+// Load silence duration preference
+function loadSilencePreference() {
+    const saved = localStorage.getItem('ghome_silence_duration');
+    if (saved !== null) {
+        assistantElements.silenceDuration.value = saved;
+        assistantElements.silenceValue.textContent = saved + 's';
+    }
+}
+
+// Save silence duration preference
+function saveSilencePreference() {
+    const value = assistantElements.silenceDuration.value;
+    localStorage.setItem('ghome_silence_duration', value);
+    assistantElements.silenceValue.textContent = value + 's';
+}
+
+// Initialize silence slider
+loadSilencePreference();
+assistantElements.silenceDuration.addEventListener('input', saveSilencePreference);
+
+// Check if Speech Recognition is supported
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;  // Keep listening
+    recognition.interimResults = true;
+    recognition.lang = 'de-DE'; // German
+
+    recognition.onstart = () => {
+        isListening = true;
+        finalTranscript = '';
+        lastSpeechTime = Date.now();
+        assistantElements.btnMic.classList.add('listening');
+        assistantElements.micIcon.style.display = 'none';
+        assistantElements.micActiveIcon.style.display = 'block';
+        assistantElements.input.placeholder = 'Ich höre zu...';
+
+        // Start silence detection
+        startSilenceDetection();
+    };
+
+    recognition.onend = () => {
+        stopSilenceDetection();
+
+        // If we have a final transcript, send it
+        if (finalTranscript.trim() && isListening) {
+            assistantElements.input.value = finalTranscript;
+            setTimeout(() => {
+                if (assistantElements.input.value.trim()) {
+                    smartSend();
+                }
+            }, 100);
+        }
+
+        isListening = false;
+        assistantElements.btnMic.classList.remove('listening');
+        assistantElements.micIcon.style.display = 'block';
+        assistantElements.micActiveIcon.style.display = 'none';
+        assistantElements.input.placeholder = 'Frag mich etwas...';
+    };
+
+    recognition.onresult = (event) => {
+        let interimTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript += transcript + ' ';
+            } else {
+                interimTranscript += transcript;
+            }
+        }
+
+        // Update last speech time whenever we get results
+        lastSpeechTime = Date.now();
+
+        // Show current transcript in input field
+        assistantElements.input.value = (finalTranscript + interimTranscript).trim();
+    };
+
+    recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        stopSilenceDetection();
+        isListening = false;
+        assistantElements.btnMic.classList.remove('listening');
+        assistantElements.micIcon.style.display = 'block';
+        assistantElements.micActiveIcon.style.display = 'none';
+        assistantElements.input.placeholder = 'Frag mich etwas...';
+
+        if (event.error === 'not-allowed') {
+            assistantElements.response.className = 'chat-response error';
+            assistantElements.response.textContent = 'Mikrofon-Zugriff verweigert. Bitte erlaube den Zugriff in den Browser-Einstellungen.';
+        } else if (event.error === 'no-speech') {
+            // No speech detected - this is ok, just stop
+            if (finalTranscript.trim()) {
+                assistantElements.input.value = finalTranscript;
+                smartSend();
+            }
+        }
+    };
+} else {
+    // Hide mic button if not supported
+    if (assistantElements.btnMic) {
+        assistantElements.btnMic.style.display = 'none';
+    }
+}
+
+// Silence detection functions
+function startSilenceDetection() {
+    stopSilenceDetection(); // Clear any existing timer
+
+    silenceTimer = setInterval(() => {
+        if (lastSpeechTime && (Date.now() - lastSpeechTime) >= getSilenceDuration()) {
+            // Silence detected - stop recognition
+            console.log('Silence detected, stopping...');
+            if (recognition && isListening) {
+                recognition.stop();
+            }
+        }
+    }, 100); // Check every 100ms
+}
+
+function stopSilenceDetection() {
+    if (silenceTimer) {
+        clearInterval(silenceTimer);
+        silenceTimer = null;
+    }
+}
+
+// Toggle speech recognition
+function toggleSpeechRecognition() {
+    if (!recognition) {
+        assistantElements.response.className = 'chat-response error';
+        assistantElements.response.textContent = 'Spracherkennung wird von diesem Browser nicht unterstützt.';
+        return;
+    }
+
+    if (isListening) {
+        recognition.stop();
+    } else {
+        finalTranscript = '';
+        assistantElements.input.value = '';
+        recognition.start();
+    }
+}
+
+// Mic button event listener
+if (assistantElements.btnMic) {
+    assistantElements.btnMic.addEventListener('click', toggleSpeechRecognition);
+}
+
+// ==================== End Speech Recognition ====================
+
+// Load Auto-Play preference from localStorage
+function loadAutoPlayPreference() {
+    const saved = localStorage.getItem('ghome_autoplay_tts');
+    if (saved !== null) {
+        assistantElements.autoPlayToggle.checked = saved === 'true';
+    }
+}
+
+// Save Auto-Play preference to localStorage
+function saveAutoPlayPreference() {
+    localStorage.setItem('ghome_autoplay_tts', assistantElements.autoPlayToggle.checked);
+}
+
+// Initialize Auto-Play toggle
+loadAutoPlayPreference();
+assistantElements.autoPlayToggle.addEventListener('change', saveAutoPlayPreference);
 
 // Check assistant health
 async function checkAssistantHealth() {
@@ -319,10 +509,7 @@ async function checkAssistantHealth() {
         if (assistantOnline) {
             assistantElements.indicator.classList.add('online');
             assistantElements.indicator.classList.remove('offline');
-            const ttsLoaded = data.models?.tts_loaded ? 'TTS' : '';
-            const sttLoaded = data.models?.stt_loaded ? 'STT' : '';
-            const models = [ttsLoaded, sttLoaded].filter(m => m).join(', ');
-            assistantElements.statusText.textContent = models ? `Online (${models})` : 'Online';
+            assistantElements.statusText.textContent = 'Online (Groq + Edge TTS)';
         } else {
             assistantElements.indicator.classList.remove('online');
             assistantElements.indicator.classList.add('offline');
@@ -344,6 +531,7 @@ async function sendTextMessage(text) {
     assistantElements.response.innerHTML = 'Denke nach...';
     assistantElements.btnSend.disabled = true;
     assistantElements.btnSpeak.disabled = true;
+    assistantElements.btnMic.disabled = true;
 
     try {
         const response = await fetch('/api/assistant/chat/text', {
@@ -356,10 +544,8 @@ async function sendTextMessage(text) {
         if (data.success) {
             lastResponse = data.response;
             assistantElements.response.className = 'chat-response';
-            assistantElements.response.innerHTML = `
-                <div class="user-message">Du: ${text}</div>
-                <div class="assistant-message">${data.response}</div>
-            `;
+            assistantElements.response.innerHTML = '<div class="user-message">Du: ' + escapeHtml(text) + '</div><div class="assistant-message">' + escapeHtml(data.response) + '</div>';
+            assistantElements.input.value = '';
         } else {
             assistantElements.response.className = 'chat-response error';
             assistantElements.response.textContent = data.error || 'Fehler bei der Verarbeitung';
@@ -371,6 +557,7 @@ async function sendTextMessage(text) {
 
     assistantElements.btnSend.disabled = false;
     assistantElements.btnSpeak.disabled = false;
+    assistantElements.btnMic.disabled = false;
 }
 
 // Send with voice output to Google Home
@@ -381,6 +568,7 @@ async function sendWithVoice(text) {
     assistantElements.response.innerHTML = 'Generiere Antwort und Audio...';
     assistantElements.btnSend.disabled = true;
     assistantElements.btnSpeak.disabled = true;
+    assistantElements.btnMic.disabled = true;
 
     try {
         const response = await fetch('/api/assistant/chat', {
@@ -392,10 +580,7 @@ async function sendWithVoice(text) {
 
         if (data.success) {
             assistantElements.response.className = 'chat-response';
-            assistantElements.response.innerHTML = `
-                <div class="user-message">Du: ${text}</div>
-                <div class="assistant-message">${data.message}</div>
-            `;
+            assistantElements.response.innerHTML = '<div class="user-message">Du: ' + escapeHtml(text) + '</div><div class="assistant-message">' + escapeHtml(data.message) + '</div>';
             // Clear radio/youtube selection
             document.querySelectorAll('.radio-btn, .yt-btn').forEach(btn => btn.classList.remove('active'));
         } else {
@@ -409,13 +594,29 @@ async function sendWithVoice(text) {
 
     assistantElements.btnSend.disabled = false;
     assistantElements.btnSpeak.disabled = false;
+    assistantElements.btnMic.disabled = false;
     assistantElements.input.value = '';
 }
 
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Smart send - checks Auto-Play toggle
+function smartSend() {
+    const text = assistantElements.input.value;
+    if (assistantElements.autoPlayToggle.checked) {
+        sendWithVoice(text);
+    } else {
+        sendTextMessage(text);
+    }
+}
+
 // Event listeners
-assistantElements.btnSend.addEventListener('click', () => {
-    sendTextMessage(assistantElements.input.value);
-});
+assistantElements.btnSend.addEventListener('click', smartSend);
 
 assistantElements.btnSpeak.addEventListener('click', () => {
     sendWithVoice(assistantElements.input.value);
@@ -424,9 +625,11 @@ assistantElements.btnSpeak.addEventListener('click', () => {
 assistantElements.input.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         if (e.shiftKey) {
+            // Shift+Enter always plays on Google Home
             sendWithVoice(assistantElements.input.value);
         } else {
-            sendTextMessage(assistantElements.input.value);
+            // Enter uses smart send (respects toggle)
+            smartSend();
         }
     }
 });
