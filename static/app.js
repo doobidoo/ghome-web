@@ -443,7 +443,11 @@ async function checkAssistantHealth() {
             const llm = data.llm || 'Groq';
             const ttsVoice = data.voice || 'Edge TTS';
             const stt = SpeechRecognition ? 'Web Speech API' : '-';
-            assistantElements.statusText.textContent = `LLM: ${llm} | STT: ${stt} | TTS: ${ttsVoice}`;
+            let statusText = `LLM: ${llm} | STT: ${stt} | TTS: ${ttsVoice}`;
+            if (data.memory_available) {
+                statusText += ` | Mem: ${data.memory_count}`;
+            }
+            assistantElements.statusText.textContent = statusText;
         } else {
             assistantElements.indicator.classList.remove('online');
             assistantElements.indicator.classList.add('offline');
@@ -475,7 +479,7 @@ async function sendTextMessage(text) {
         const data = await response.json();
 
         if (data.success) {
-            showResponse(text, data.response);
+            showResponse(text, data.response, data.memory_count || 0);
             assistantElements.input.value = '';
         } else {
             showError(data.error || 'Fehler bei der Verarbeitung');
@@ -506,7 +510,7 @@ async function sendWithVoice(text) {
         const data = await response.json();
 
         if (data.success) {
-            showResponse(text, data.response || data.message);
+            showResponse(text, data.response || data.message, data.memory_count || 0);
 
             if (!toGoogleHome && data.audio_url) {
                 playBrowserAudio(data.audio_url);
@@ -526,11 +530,12 @@ async function sendWithVoice(text) {
     assistantElements.input.value = '';
 }
 
-function showResponse(question, answer) {
+function showResponse(question, answer, memoryCount = 0) {
     assistantElements.response.className = 'chat-response';
+    let memoryInfo = memoryCount > 0 ? ` <span style="color: var(--accent); font-size: 0.7rem;">(${memoryCount} Erinnerungen)</span>` : '';
     assistantElements.response.innerHTML =
         '<div class="user-message">Du: ' + escapeHtml(question) + '</div>' +
-        '<div class="assistant-message">' + escapeHtml(answer) + '</div>';
+        '<div class="assistant-message">' + escapeHtml(answer) + memoryInfo + '</div>';
 }
 
 function showError(message) {

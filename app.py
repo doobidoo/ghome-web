@@ -23,6 +23,14 @@ DEVICE = "Familienzimmer"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
+# SHODH Cloudflare Memory API (set via environment variable)
+SHODH_URL = os.environ.get("SHODH_CLOUDFLARE_URL", "")
+SHODH_API_KEY = os.environ.get("SHODH_CLOUDFLARE_API_KEY", "")
+
+# In-memory conversation history (last 5 exchanges)
+conversation_history = []
+MAX_HISTORY = 5
+
 # Edge TTS Voice (German)
 TTS_VOICE = "de-CH-LeniNeural"  # Swiss German female voice
 
@@ -290,31 +298,165 @@ def play_youtube(name):
 
     return jsonify({"success": code == 0, "name": name, "message": stderr if code != 0 else f"Playing {name}"})
 
+# ==================== SHODH Memory Functions ====================
+
+def shodh_recall(query, limit=3):
+    """Search for relevant memories using semantic search."""
+    if not SHODH_API_KEY:
+        return []
+    try:
+        response = requests.post(
+            f"{SHODH_URL}/api/recall",
+            headers={
+                "Authorization": f"Bearer {SHODH_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={"query": query, "limit": limit},
+            timeout=5
+        )
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("memories", [])
+    except Exception as e:
+        print(f"SHODH recall error: {e}")
+    return []
+
+def shodh_remember(content, memory_type="Conversation", tags=None):
+    """Store a new memory in SHODH."""
+    if not SHODH_API_KEY:
+        return None
+    try:
+        payload = {
+            "content": content,
+            "type": memory_type,
+            "source_type": "ai_generated"
+        }
+        if tags:
+            payload["tags"] = tags
+
+        response = requests.post(
+            f"{SHODH_URL}/api/remember",
+            headers={
+                "Authorization": f"Bearer {SHODH_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=5
+        )
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        print(f"SHODH remember error: {e}")
+    return None
+
+def shodh_context(context, max_results=3, auto_ingest=True):
+    """Surface relevant memories based on context."""
+    if not SHODH_API_KEY:
+        return {"surfaced_memories": [], "count": 0}
+    try:
+        response = requests.post(
+            f"{SHODH_URL}/api/context",
+            headers={
+                "Authorization": f"Bearer {SHODH_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "context": context,
+                "max_results": max_results,
+                "auto_ingest": auto_ingest
+            },
+            timeout=5
+        )
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        print(f"SHODH context error: {e}")
+    return {"surfaced_memories": [], "count": 0}
+
+def format_memories_for_context(memories, max_chars=500):
+    """Format memories for inclusion in LLM context."""
+    if not memories:
+        return ""
+
+    context_parts = []
+    total_chars = 0
+
+    for mem in memories:
+        content = mem.get("content", "")
+        # Truncate if needed
+        if total_chars + len(content) > max_chars:
+            remaining = max_chars - total_chars
+            if remaining > 50:
+                content = content[:remaining] + "..."
+            else:
+                break
+        context_parts.append(f"- {content}")
+        total_chars += len(content)
+
+    if context_parts:
+        return "Relevante Erinnerungen:\n" + "\n".join(context_parts)
+    return ""
+
 # ==================== Voice Assistant (Groq + Edge TTS) ====================
 
-def get_groq_response(text):
-    """Get response from Groq LLM."""
+def get_groq_response(text, use_memory=True):
+    """Get response from Groq LLM with optional memory context."""
+    global conversation_history
+
     if not groq_client:
-        return "Fehler: GROQ_API_KEY Umgebungsvariable nicht gesetzt."
+        return "Fehler: GROQ_API_KEY Umgebungsvariable nicht gesetzt.", 0
+
     try:
+        # Build system message with memory context
+        system_content = "Du bist ein hilfreicher Assistent. Antworte kurz und prägnant auf Deutsch. Halte deine Antworten unter 3 Sätzen."
+
+        memory_count = 0
+        if use_memory and SHODH_API_KEY:
+            # Recall relevant memories
+            memories = shodh_recall(text, limit=3)
+            memory_count = len(memories)
+            memory_context = format_memories_for_context(memories)
+            if memory_context:
+                system_content += f"\n\n{memory_context}"
+
+        # Build messages with conversation history
+        messages = [{"role": "system", "content": system_content}]
+
+        # Add recent conversation history
+        for exchange in conversation_history[-MAX_HISTORY:]:
+            messages.append({"role": "user", "content": exchange["user"]})
+            messages.append({"role": "assistant", "content": exchange["assistant"]})
+
+        # Add current user message
+        messages.append({"role": "user", "content": text})
+
         chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Du bist ein hilfreicher Assistent. Antworte kurz und prägnant auf Deutsch. Halte deine Antworten unter 3 Sätzen."
-                },
-                {
-                    "role": "user",
-                    "content": text
-                }
-            ],
+            messages=messages,
             model="llama-3.3-70b-versatile",
             temperature=0.7,
             max_tokens=200,
         )
-        return chat_completion.choices[0].message.content
+        response = chat_completion.choices[0].message.content
+
+        # Store in conversation history
+        conversation_history.append({"user": text, "assistant": response})
+        if len(conversation_history) > MAX_HISTORY:
+            conversation_history = conversation_history[-MAX_HISTORY:]
+
+        # Store in SHODH memory (async, don't block)
+        if use_memory and SHODH_API_KEY:
+            try:
+                shodh_remember(
+                    f"Frage: {text}\nAntwort: {response}",
+                    memory_type="Conversation",
+                    tags=["ghome-assistant", "voice"]
+                )
+            except:
+                pass  # Don't fail if memory storage fails
+
+        return response, memory_count
     except Exception as e:
-        return f"Fehler bei der Verarbeitung: {str(e)}"
+        return f"Fehler bei der Verarbeitung: {str(e)}", 0
 
 async def generate_tts_audio(text, output_file):
     """Generate TTS audio using Edge TTS."""
@@ -343,11 +485,31 @@ def assistant_health():
             model="llama-3.3-70b-versatile",
             max_tokens=5,
         )
+
+        # Check SHODH memory status
+        memory_available = False
+        memory_count = 0
+        if SHODH_API_KEY:
+            try:
+                response = requests.get(
+                    f"{SHODH_URL}/api/stats",
+                    headers={"Authorization": f"Bearer {SHODH_API_KEY}"},
+                    timeout=3
+                )
+                if response.status_code == 200:
+                    stats = response.json()
+                    memory_available = True
+                    memory_count = stats.get("total_memories", 0)
+            except:
+                pass
+
         return jsonify({
             "api_available": True,
             "llm": "Groq (llama-3.3-70b)",
             "tts": "Edge TTS",
-            "voice": TTS_VOICE
+            "voice": TTS_VOICE,
+            "memory_available": memory_available,
+            "memory_count": memory_count
         })
     except Exception as e:
         return jsonify({"api_available": False, "error": str(e)})
@@ -361,35 +523,37 @@ def assistant_chat():
     global current_source
     data = request.get_json() or {}
     text = data.get('text', '')
+    use_memory = data.get('use_memory', True)
 
     if not text:
         return jsonify({"success": False, "error": "No text provided"}), 400
 
     try:
-        # Get LLM response from Groq
-        response_text = get_groq_response(text)
-        
+        # Get LLM response from Groq (with memory context)
+        response_text, memory_count = get_groq_response(text, use_memory=use_memory)
+
         # Generate TTS audio
         filename, filepath = text_to_speech(response_text)
-        
+
         # Build audio URL
         audio_url = f"http://{LOCAL_IP}:{LOCAL_PORT}/audio/{filename}"
-        
+
         # Stop current playback
         run_catt("stop")
         time.sleep(0.5)
-        
+
         # Cast audio to Google Home
         stdout, stderr, code = run_catt("cast", audio_url)
-        
+
         if code == 0:
             current_source = {"type": "assistant", "name": "Voice Assistant"}
-        
+
         return jsonify({
             "success": code == 0,
             "input": text,
             "response": response_text,
             "audio_url": audio_url,
+            "memory_count": memory_count,
             "message": "Antwort wird abgespielt" if code == 0 else stderr
         })
 
@@ -403,16 +567,18 @@ def assistant_chat_text():
     """
     data = request.get_json() or {}
     text = data.get('text', '')
+    use_memory = data.get('use_memory', True)
 
     if not text:
         return jsonify({"success": False, "error": "No text provided"}), 400
 
     try:
-        response_text = get_groq_response(text)
+        response_text, memory_count = get_groq_response(text, use_memory=use_memory)
         return jsonify({
             "success": True,
             "input": text,
-            "response": response_text
+            "response": response_text,
+            "memory_count": memory_count
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -425,13 +591,14 @@ def assistant_chat_browser():
     """
     data = request.get_json() or {}
     text = data.get('text', '')
+    use_memory = data.get('use_memory', True)
 
     if not text:
         return jsonify({"success": False, "error": "No text provided"}), 400
 
     try:
-        # Get LLM response from Groq
-        response_text = get_groq_response(text)
+        # Get LLM response from Groq (with memory context)
+        response_text, memory_count = get_groq_response(text, use_memory=use_memory)
 
         # Generate TTS audio
         filename, filepath = text_to_speech(response_text)
@@ -444,6 +611,7 @@ def assistant_chat_browser():
             "input": text,
             "response": response_text,
             "audio_url": audio_url,
+            "memory_count": memory_count,
             "message": response_text
         })
 
