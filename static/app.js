@@ -479,7 +479,7 @@ async function sendTextMessage(text) {
         const data = await response.json();
 
         if (data.success) {
-            showResponse(text, data.response, data.memory_count || 0);
+            showResponse(text, data.response, data.memory_count || 0, data.memory_stored || false);
             assistantElements.input.value = '';
         } else {
             showError(data.error || 'Fehler bei der Verarbeitung');
@@ -510,7 +510,7 @@ async function sendWithVoice(text) {
         const data = await response.json();
 
         if (data.success) {
-            showResponse(text, data.response || data.message, data.memory_count || 0);
+            showResponse(text, data.response || data.message, data.memory_count || 0, data.memory_stored || false);
 
             if (!toGoogleHome && data.audio_url) {
                 playBrowserAudio(data.audio_url);
@@ -530,9 +530,15 @@ async function sendWithVoice(text) {
     assistantElements.input.value = '';
 }
 
-function showResponse(question, answer, memoryCount = 0) {
+function showResponse(question, answer, memoryCount = 0, memoryStored = false) {
     assistantElements.response.className = 'chat-response';
-    let memoryInfo = memoryCount > 0 ? ` <span style="color: var(--accent); font-size: 0.7rem;">(${memoryCount} Erinnerungen)</span>` : '';
+    let memoryInfo = '';
+    if (memoryStored) {
+        memoryInfo = ' <span style="color: #4ade80; font-size: 0.7rem;" title="Gespeichert">💾</span>';
+    }
+    if (memoryCount > 0) {
+        memoryInfo += ` <span style="color: var(--accent); font-size: 0.7rem;">(${memoryCount} 🧠)</span>`;
+    }
     assistantElements.response.innerHTML =
         '<div class="user-message">Du: ' + escapeHtml(question) + '</div>' +
         '<div class="assistant-message">' + escapeHtml(answer) + memoryInfo + '</div>';

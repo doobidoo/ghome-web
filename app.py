@@ -15,9 +15,13 @@ from flask import Flask, render_template, jsonify, request, send_from_directory
 from groq import Groq
 import edge_tts
 
-app = Flask(__name__)
+from config import (
+    DEVICE, TTS_VOICE, ASSISTANT_PERSONA,
+    RADIO_STATIONS, YOUTUBE_FAVORITES,
+    LOCAL_IP, LOCAL_PORT, MAX_HISTORY
+)
 
-DEVICE = "Familienzimmer"
+app = Flask(__name__)
 
 # Groq API for LLM (set via environment variable)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
@@ -27,51 +31,108 @@ groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 SHODH_URL = os.environ.get("SHODH_CLOUDFLARE_URL", "")
 SHODH_API_KEY = os.environ.get("SHODH_CLOUDFLARE_API_KEY", "")
 
-# In-memory conversation history (last 5 exchanges)
+# In-memory conversation history
 conversation_history = []
-MAX_HISTORY = 5
 
-# Edge TTS Voice (German)
-TTS_VOICE = "de-CH-LeniNeural"  # Swiss German female voice
+# Memory Trigger Patterns
+
+# Explicit memory storage triggers (German + English)
+MEMORY_STORE_PATTERNS = [
+    r"^merk dir[:\s]",
+    r"^merke dir[:\s]",
+    r"^speicher[:\s]",
+    r"^speichere[:\s]",
+    r"^remember[:\s]",
+    r"^vergiss nicht[:\s]",
+    r"^wichtig[:\s]",
+    r"^notiz[:\s]",
+    r"^info[:\s]",
+    r"^das ist wichtig[:\s]",
+]
+
+# Skip patterns - don't store these casual interactions
+MEMORY_SKIP_PATTERNS = [
+    r"^(hallo|hi|hey|guten tag|guten morgen|guten abend|servus|grüezi)[\s!.,]*$",
+    r"^wie geht.s",
+    r"^wie spät",
+    r"^wie ist das wetter",
+    r"^was ist die uhrzeit",
+    r"^danke",
+    r"^ok$",
+    r"^ja$",
+    r"^nein$",
+    r"^test$",
+]
+
+# Explicit recall triggers
+MEMORY_RECALL_PATTERNS = [
+    r"was weisst du (über|zu|von)",
+    r"erinnerst du dich",
+    r"was haben wir besprochen",
+    r"was habe ich dir gesagt",
+    r"was hast du dir gemerkt",
+    r"erinnere dich an",
+]
+
+def should_store_memory(text):
+    """Check if this message should be stored in memory."""
+    text_lower = text.lower().strip()
+
+    # Always store if explicit trigger
+    for pattern in MEMORY_STORE_PATTERNS:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return True, "explicit"
+
+    # Never store if skip pattern
+    for pattern in MEMORY_SKIP_PATTERNS:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return False, "skip"
+
+    # Skip very short messages (< 10 chars)
+    if len(text_lower) < 10:
+        return False, "too_short"
+
+    # Default: store if substantive (> 20 chars)
+    if len(text_lower) > 20:
+        return True, "substantive"
+
+    return False, "default"
+
+def should_recall_memory(text):
+    """Check if we should actively search for memories."""
+    text_lower = text.lower().strip()
+
+    # Always recall if explicit trigger
+    for pattern in MEMORY_RECALL_PATTERNS:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return True, "explicit_recall"
+
+    # Skip recall for casual interactions
+    for pattern in MEMORY_SKIP_PATTERNS:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return False, "skip"
+
+    # Default: recall for substantive questions
+    if len(text_lower) > 15:
+        return True, "default"
+
+    return False, "too_short"
+
+def extract_memory_content(text):
+    """Extract the actual content to remember from trigger phrases."""
+    text_lower = text.lower().strip()
+
+    for pattern in MEMORY_STORE_PATTERNS:
+        match = re.search(pattern, text_lower, re.IGNORECASE)
+        if match:
+            # Return text after the trigger phrase
+            return text[match.end():].strip()
+
+    return text
 
 # Audio files directory for casting
 AUDIO_DIR = "/tmp/ghome_audio"
 os.makedirs(AUDIO_DIR, exist_ok=True)
-
-# Local server IP (for casting URLs) - Pi-Hole server
-LOCAL_IP = "10.0.1.56"
-LOCAL_PORT = 5000
-
-# Radio stations - name: stream URL
-RADIO_STATIONS = {
-    "SRF 1": "https://stream.srg-ssr.ch/m/drs1/mp3_128",
-    "SRF 2 Kultur": "https://stream.srg-ssr.ch/m/drs2/mp3_128",
-    "SRF 3": "https://stream.srg-ssr.ch/m/drs3/mp3_128",
-    "SRF 4 News": "https://stream.srg-ssr.ch/m/drs4news/mp3_128",
-    "Radio Swiss Jazz": "https://stream.srg-ssr.ch/m/rsj/mp3_128",
-    "Radio Swiss Classic": "https://stream.srg-ssr.ch/m/rsc_de/mp3_128",
-    "Radio Swiss Pop": "https://stream.srg-ssr.ch/m/rsp/mp3_128",
-    "FM4": "https://orf-live.ors-shoutcast.at/fm4-q2a",
-    "Ö1": "https://orf-live.ors-shoutcast.at/oe1-q2a",
-    "Ö3": "https://orf-live.ors-shoutcast.at/oe3-q2a",
-    "Bayern 3": "https://dispatcher.rndfnk.com/br/br3/live/mp3/mid",
-    "WDR 2": "https://wdr-wdr2-rheinland.icecastssl.wdr.de/wdr/wdr2/rheinland/mp3/128/stream.mp3",
-    "NDR 2": "https://icecast.ndr.de/ndr/ndr2/niedersachsen/mp3/128/stream.mp3",
-    "1LIVE": "https://wdr-1live-live.icecastssl.wdr.de/wdr/1live/live/mp3/128/stream.mp3",
-    "Klassik Radio": "https://stream.klassikradio.de/live/mp3-192/stream.klassikradio.de/",
-    "Lounge FM": "http://stream.lounge.fm/loungefm-mp3-320",
-}
-
-# YouTube favorites - name: URL
-YOUTUBE_FAVORITES = {
-    "Hillsong Worship 2h": "https://www.youtube.com/watch?v=ruI3dhJQamM",
-    "Worship Songs 2h": "https://www.youtube.com/watch?v=wUm_WP6TH3o",
-    "Hillsong Best 2024": "https://www.youtube.com/watch?v=_1HGZ_9aRhI",
-    "Smooth Jazz": "https://www.youtube.com/watch?v=U3n31M81RpE",
-    "Jazz Fusion 70s-80s": "https://www.youtube.com/watch?v=DMI2Xh6tIIQ",
-    "Rare Jazz Fusion": "https://www.youtube.com/watch?v=Qw7vOfDLBiQ",
-    "Indie Jazz Funk": "https://www.youtube.com/watch?v=DxVce5xunE4",
-}
 
 # Track current playing source
 current_source = {"type": None, "name": None}
@@ -404,14 +465,23 @@ def get_groq_response(text, use_memory=True):
     global conversation_history
 
     if not groq_client:
-        return "Fehler: GROQ_API_KEY Umgebungsvariable nicht gesetzt.", 0
+        return "Fehler: GROQ_API_KEY Umgebungsvariable nicht gesetzt.", 0, None
 
     try:
-        # Build system message with memory context
-        system_content = "Du bist ein hilfreicher Assistent. Antworte kurz und prägnant auf Deutsch. Halte deine Antworten unter 3 Sätzen."
+        # Check if this is an explicit memory store request
+        do_store, store_reason = should_store_memory(text)
+        do_recall, recall_reason = should_recall_memory(text)
+
+        # Build system message with persona and memory context
+        system_content = ASSISTANT_PERSONA
+
+        # Handle explicit memory triggers
+        if store_reason == "explicit":
+            memory_content = extract_memory_content(text)
+            system_content += "\n\nDer Benutzer möchte, dass du dir etwas merkst. Bestätige kurz und professionell."
 
         memory_count = 0
-        if use_memory and SHODH_API_KEY:
+        if use_memory and SHODH_API_KEY and do_recall:
             # Recall relevant memories
             memories = shodh_recall(text, limit=3)
             memory_count = len(memories)
@@ -443,20 +513,32 @@ def get_groq_response(text, use_memory=True):
         if len(conversation_history) > MAX_HISTORY:
             conversation_history = conversation_history[-MAX_HISTORY:]
 
-        # Store in SHODH memory (async, don't block)
-        if use_memory and SHODH_API_KEY:
+        # Store in SHODH memory based on trigger patterns
+        memory_stored = False
+        if use_memory and SHODH_API_KEY and do_store:
             try:
-                shodh_remember(
-                    f"Frage: {text}\nAntwort: {response}",
-                    memory_type="Conversation",
-                    tags=["ghome-assistant", "voice"]
-                )
+                if store_reason == "explicit":
+                    # Store only the extracted content for explicit triggers
+                    memory_content = extract_memory_content(text)
+                    shodh_remember(
+                        memory_content,
+                        memory_type="Learning",
+                        tags=["ghome-assistant", "explicit", "user-info"]
+                    )
+                else:
+                    # Store conversation for substantive interactions
+                    shodh_remember(
+                        f"Frage: {text}\nAntwort: {response}",
+                        memory_type="Conversation",
+                        tags=["ghome-assistant", "voice"]
+                    )
+                memory_stored = True
             except:
                 pass  # Don't fail if memory storage fails
 
-        return response, memory_count
+        return response, memory_count, {"stored": memory_stored, "reason": store_reason}
     except Exception as e:
-        return f"Fehler bei der Verarbeitung: {str(e)}", 0
+        return f"Fehler bei der Verarbeitung: {str(e)}", 0, None
 
 async def generate_tts_audio(text, output_file):
     """Generate TTS audio using Edge TTS."""
@@ -530,7 +612,7 @@ def assistant_chat():
 
     try:
         # Get LLM response from Groq (with memory context)
-        response_text, memory_count = get_groq_response(text, use_memory=use_memory)
+        response_text, memory_count, memory_info = get_groq_response(text, use_memory=use_memory)
 
         # Generate TTS audio
         filename, filepath = text_to_speech(response_text)
@@ -554,6 +636,7 @@ def assistant_chat():
             "response": response_text,
             "audio_url": audio_url,
             "memory_count": memory_count,
+            "memory_stored": memory_info.get("stored", False) if memory_info else False,
             "message": "Antwort wird abgespielt" if code == 0 else stderr
         })
 
@@ -573,12 +656,13 @@ def assistant_chat_text():
         return jsonify({"success": False, "error": "No text provided"}), 400
 
     try:
-        response_text, memory_count = get_groq_response(text, use_memory=use_memory)
+        response_text, memory_count, memory_info = get_groq_response(text, use_memory=use_memory)
         return jsonify({
             "success": True,
             "input": text,
             "response": response_text,
-            "memory_count": memory_count
+            "memory_count": memory_count,
+            "memory_stored": memory_info.get("stored", False) if memory_info else False
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -598,7 +682,7 @@ def assistant_chat_browser():
 
     try:
         # Get LLM response from Groq (with memory context)
-        response_text, memory_count = get_groq_response(text, use_memory=use_memory)
+        response_text, memory_count, memory_info = get_groq_response(text, use_memory=use_memory)
 
         # Generate TTS audio
         filename, filepath = text_to_speech(response_text)
@@ -612,6 +696,7 @@ def assistant_chat_browser():
             "response": response_text,
             "audio_url": audio_url,
             "memory_count": memory_count,
+            "memory_stored": memory_info.get("stored", False) if memory_info else False,
             "message": response_text
         })
 
