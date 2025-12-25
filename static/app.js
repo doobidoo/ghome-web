@@ -440,9 +440,10 @@ async function checkAssistantHealth() {
         if (assistantOnline) {
             assistantElements.indicator.classList.add('online');
             assistantElements.indicator.classList.remove('offline');
+            const llm = data.llm || 'Groq';
             const ttsVoice = data.voice || 'Edge TTS';
-            const stt = SpeechRecognition ? 'Web Speech API' : 'kein STT';
-            assistantElements.statusText.textContent = `Online | STT: ${stt} | TTS: ${ttsVoice}`;
+            const stt = SpeechRecognition ? 'Web Speech API' : '-';
+            assistantElements.statusText.textContent = `LLM: ${llm} | STT: ${stt} | TTS: ${ttsVoice}`;
         } else {
             assistantElements.indicator.classList.remove('online');
             assistantElements.indicator.classList.add('offline');
