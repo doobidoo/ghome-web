@@ -418,21 +418,21 @@ header h1 {
     box-shadow: 0 0 6px var(--accent);
 }
 
-/* Assistant Settings Row */
-.assistant-settings {
+/* Assistant Settings Grid */
+.assistant-settings-grid {
     display: flex;
-    gap: 12px;
+    flex-direction: column;
+    gap: 10px;
     margin-bottom: 12px;
 }
 
-.setting-item {
+.setting-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     padding: 8px 12px;
     background: var(--bg-tertiary);
     border-radius: 8px;
-    flex: 1;
 }
 
 .setting-label {
@@ -441,60 +441,81 @@ header h1 {
     white-space: nowrap;
 }
 
-.setting-icon {
-    width: 16px;
-    height: 16px;
-    color: var(--text-muted);
-    flex-shrink: 0;
-}
-
 .setting-value {
     font-size: 0.75rem;
     color: var(--accent);
-    min-width: 30px;
+    min-width: 28px;
     text-align: right;
 }
 
-/* Output Target Toggle */
-.output-toggle {
-    gap: 6px !important;
-    padding: 8px 10px !important;
-}
-
-.output-toggle .setting-icon {
-    width: 18px;
-    height: 18px;
-    transition: opacity 0.2s;
-}
-
-.toggle-switch.small {
-    width: 32px;
-    height: 18px;
-}
-
-.toggle-switch.small .toggle-slider:before {
-    height: 12px;
-    width: 12px;
-    left: 3px;
-    bottom: 3px;
-}
-
-.toggle-switch.small input:checked + .toggle-slider:before {
-    transform: translateX(14px);
-}
-
-.silence-setting input[type="range"] {
+/* Output Buttons */
+.output-buttons {
+    display: flex;
+    gap: 8px;
     flex: 1;
+}
+
+.output-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--text-muted);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex: 1;
+    justify-content: center;
+}
+
+.output-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.output-btn:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+.output-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg-primary);
+}
+
+/* Settings Row Items */
+.setting-item-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.setting-icon-small {
+    width: 14px;
+    height: 14px;
+    color: var(--text-muted);
+}
+
+.silence-control {
+    flex: 1;
+    justify-content: flex-end;
+}
+
+.silence-slider {
+    width: 80px;
     -webkit-appearance: none;
     appearance: none;
     height: 4px;
     background: var(--text-muted);
     border-radius: 2px;
     cursor: pointer;
-    min-width: 60px;
 }
 
-.silence-setting input[type="range"]::-webkit-slider-thumb {
+.silence-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
     width: 12px;
@@ -504,7 +525,7 @@ header h1 {
     cursor: pointer;
 }
 
-.silence-setting input[type="range"]::-moz-range-thumb {
+.silence-slider::-moz-range-thumb {
     width: 12px;
     height: 12px;
     background: var(--accent);
@@ -513,7 +534,17 @@ header h1 {
     border: none;
 }
 
-/* Auto-Play Toggle - kept for backwards compatibility */
+/* Send Button */
+.send-btn {
+    background: var(--accent) !important;
+    color: var(--bg-primary) !important;
+}
+
+.send-btn:hover {
+    background: var(--accent-hover) !important;
+}
+
+/* Legacy - kept for backwards compatibility */
 .auto-play-toggle {
     display: flex;
     align-items: center;

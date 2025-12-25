@@ -37,7 +37,6 @@ const elements = {
 let isPlaying = false;
 let updateInterval = null;
 
-// Format seconds to MM:SS
 function formatTime(seconds) {
     if (!seconds || isNaN(seconds)) return '0:00';
     const mins = Math.floor(seconds / 60);
@@ -45,16 +44,13 @@ function formatTime(seconds) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-// Update UI with player info
 function updateUI(info) {
-    // Status dot
     if (info.playing) {
         elements.statusDot.classList.add('active');
     } else {
         elements.statusDot.classList.remove('active');
     }
 
-    // Track info
     if (info.title) {
         elements.trackTitle.textContent = info.title;
     } else if (info.player_state === 'IDLE') {
@@ -66,7 +62,6 @@ function updateUI(info) {
     elements.trackArtist.textContent = info.artist || '';
     elements.trackAlbum.textContent = info.album || '';
 
-    // Album art
     if (info.image_url) {
         elements.albumArt.src = info.image_url;
         elements.albumArt.classList.add('visible');
@@ -76,7 +71,6 @@ function updateUI(info) {
         elements.noArt.style.display = 'flex';
     }
 
-    // Progress
     elements.currentTime.textContent = formatTime(info.current_time);
     elements.duration.textContent = formatTime(info.duration);
 
@@ -87,7 +81,6 @@ function updateUI(info) {
         elements.progress.style.width = '0%';
     }
 
-    // Play/Pause button
     isPlaying = info.playing;
     if (isPlaying) {
         elements.iconPlay.style.display = 'none';
@@ -97,17 +90,14 @@ function updateUI(info) {
         elements.iconPause.style.display = 'none';
     }
 
-    // Volume
     if (info.volume !== undefined) {
         elements.volumeSlider.value = info.volume;
         elements.volumeValue.textContent = `${info.volume}%`;
     }
 
-    // App name
     elements.appName.textContent = info.app || '';
 }
 
-// Fetch player info
 async function fetchInfo() {
     try {
         const response = await fetch(API.info);
@@ -118,12 +108,10 @@ async function fetchInfo() {
     }
 }
 
-// Send POST request
 async function sendCommand(url) {
     try {
         const response = await fetch(url, { method: 'POST' });
         const result = await response.json();
-        // Refresh info after command
         setTimeout(fetchInfo, 300);
         return result;
     } catch (error) {
@@ -132,44 +120,23 @@ async function sendCommand(url) {
     }
 }
 
-// Event Listeners
 elements.btnPlayPause.addEventListener('click', () => {
-    if (isPlaying) {
-        sendCommand(API.pause);
-    } else {
-        sendCommand(API.play);
-    }
+    sendCommand(isPlaying ? API.pause : API.play);
 });
 
-elements.btnStop.addEventListener('click', () => {
-    sendCommand(API.stop);
-});
-
-elements.btnSkip.addEventListener('click', () => {
-    sendCommand(API.skip);
-});
-
-elements.btnVolUp.addEventListener('click', () => {
-    sendCommand(API.volumeup);
-});
-
-elements.btnVolDown.addEventListener('click', () => {
-    sendCommand(API.volumedown);
-});
+elements.btnStop.addEventListener('click', () => sendCommand(API.stop));
+elements.btnSkip.addEventListener('click', () => sendCommand(API.skip));
+elements.btnVolUp.addEventListener('click', () => sendCommand(API.volumeup));
+elements.btnVolDown.addEventListener('click', () => sendCommand(API.volumedown));
 
 let volumeTimeout = null;
 elements.volumeSlider.addEventListener('input', (e) => {
     const value = e.target.value;
     elements.volumeValue.textContent = `${value}%`;
-
-    // Debounce volume changes
     clearTimeout(volumeTimeout);
-    volumeTimeout = setTimeout(() => {
-        sendCommand(API.volume(value));
-    }, 100);
+    volumeTimeout = setTimeout(() => sendCommand(API.volume(value)), 100);
 });
 
-// Progress bar click to seek
 document.querySelector('.progress-bar').addEventListener('click', (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const percent = (e.clientX - rect.left) / rect.width;
@@ -184,11 +151,9 @@ document.querySelector('.progress-bar').addEventListener('click', (e) => {
     }
 });
 
-// Initial fetch and start auto-refresh
 fetchInfo();
 updateInterval = setInterval(fetchInfo, 3000);
 
-// Visibility API - pause updates when tab is hidden
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
         clearInterval(updateInterval);
@@ -198,15 +163,13 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
-// Radio functionality
+// Radio
 const radioGrid = document.getElementById('radioGrid');
-let currentStation = null;
 
 async function loadRadioStations() {
     try {
         const response = await fetch('/api/radio/stations');
         const data = await response.json();
-
         radioGrid.innerHTML = '';
         data.stations.forEach(station => {
             const btn = document.createElement('button');
@@ -221,41 +184,29 @@ async function loadRadioStations() {
 }
 
 async function playRadio(station) {
-    // Clear YouTube selection
     document.querySelectorAll('.yt-btn').forEach(btn => btn.classList.remove('active'));
-
-    // Update radio UI
     document.querySelectorAll('.radio-btn').forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.textContent === station) {
-            btn.classList.add('active');
-        }
+        btn.classList.toggle('active', btn.textContent === station);
     });
-
-    currentStation = station;
 
     try {
         const response = await fetch(`/api/radio/play/${encodeURIComponent(station)}`, { method: 'POST' });
         const result = await response.json();
-        if (result.success) {
-            setTimeout(fetchInfo, 1500);
-        }
+        if (result.success) setTimeout(fetchInfo, 1500);
     } catch (error) {
         console.error('Error playing radio:', error);
     }
 }
 
-// Load radio stations on page load
 loadRadioStations();
 
-// YouTube functionality
+// YouTube
 const youtubeGrid = document.getElementById('youtubeGrid');
 
 async function loadYouTubeVideos() {
     try {
         const response = await fetch('/api/youtube/list');
         const data = await response.json();
-
         youtubeGrid.innerHTML = '';
         data.videos.forEach(name => {
             const btn = document.createElement('button');
@@ -270,29 +221,20 @@ async function loadYouTubeVideos() {
 }
 
 async function playYouTube(name) {
-    // Clear radio selection
     document.querySelectorAll('.radio-btn').forEach(btn => btn.classList.remove('active'));
-
-    // Update YouTube UI
     document.querySelectorAll('.yt-btn').forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.textContent === name) {
-            btn.classList.add('active');
-        }
+        btn.classList.toggle('active', btn.textContent === name);
     });
 
     try {
         const response = await fetch(`/api/youtube/play/${encodeURIComponent(name)}`, { method: 'POST' });
         const result = await response.json();
-        if (result.success) {
-            setTimeout(fetchInfo, 2000);
-        }
+        if (result.success) setTimeout(fetchInfo, 2000);
     } catch (error) {
         console.error('Error playing YouTube:', error);
     }
 }
 
-// Load YouTube videos on page load
 loadYouTubeVideos();
 
 // ==================== Voice Assistant ====================
@@ -307,16 +249,38 @@ const assistantElements = {
     indicator: document.getElementById('assistantIndicator'),
     statusText: document.getElementById('assistantStatusText'),
     autoPlayToggle: document.getElementById('autoPlayToggle'),
-    outputTargetToggle: document.getElementById('outputTargetToggle'),
-    outputIconBrowser: document.getElementById('outputIconBrowser'),
-    outputIconGHome: document.getElementById('outputIconGHome'),
+    btnOutputBrowser: document.getElementById('btnOutputBrowser'),
+    btnOutputGHome: document.getElementById('btnOutputGHome'),
     silenceDuration: document.getElementById('silenceDuration'),
     silenceValue: document.getElementById('silenceValue'),
     browserAudio: document.getElementById('browserAudio')
 };
 
 let assistantOnline = false;
-let lastResponse = '';
+let outputTarget = 'browser'; // 'browser' or 'ghome'
+
+// ==================== Output Target ====================
+
+function loadOutputTarget() {
+    const saved = localStorage.getItem('ghome_output_target');
+    if (saved) outputTarget = saved;
+    updateOutputButtons();
+}
+
+function setOutputTarget(target) {
+    outputTarget = target;
+    localStorage.setItem('ghome_output_target', target);
+    updateOutputButtons();
+}
+
+function updateOutputButtons() {
+    assistantElements.btnOutputBrowser.classList.toggle('active', outputTarget === 'browser');
+    assistantElements.btnOutputGHome.classList.toggle('active', outputTarget === 'ghome');
+}
+
+assistantElements.btnOutputBrowser.addEventListener('click', () => setOutputTarget('browser'));
+assistantElements.btnOutputGHome.addEventListener('click', () => setOutputTarget('ghome'));
+loadOutputTarget();
 
 // ==================== Speech Recognition ====================
 
@@ -326,12 +290,10 @@ let silenceTimer = null;
 let lastSpeechTime = null;
 let finalTranscript = '';
 
-// Get silence duration from slider (in ms)
 function getSilenceDuration() {
     return parseFloat(assistantElements.silenceDuration.value) * 1000;
 }
 
-// Load silence duration preference
 function loadSilencePreference() {
     const saved = localStorage.getItem('ghome_silence_duration');
     if (saved !== null) {
@@ -340,25 +302,22 @@ function loadSilencePreference() {
     }
 }
 
-// Save silence duration preference
 function saveSilencePreference() {
     const value = assistantElements.silenceDuration.value;
     localStorage.setItem('ghome_silence_duration', value);
     assistantElements.silenceValue.textContent = value + 's';
 }
 
-// Initialize silence slider
 loadSilencePreference();
 assistantElements.silenceDuration.addEventListener('input', saveSilencePreference);
 
-// Check if Speech Recognition is supported
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 if (SpeechRecognition) {
     recognition = new SpeechRecognition();
-    recognition.continuous = true;  // Keep listening
+    recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = 'de-DE'; // German
+    recognition.lang = 'de-DE';
 
     recognition.onstart = () => {
         isListening = true;
@@ -368,24 +327,17 @@ if (SpeechRecognition) {
         assistantElements.micIcon.style.display = 'none';
         assistantElements.micActiveIcon.style.display = 'block';
         assistantElements.input.placeholder = 'Ich höre zu...';
-
-        // Start silence detection
         startSilenceDetection();
     };
 
     recognition.onend = () => {
         stopSilenceDetection();
-
-        // If we have a final transcript, send it
         if (finalTranscript.trim() && isListening) {
             assistantElements.input.value = finalTranscript;
             setTimeout(() => {
-                if (assistantElements.input.value.trim()) {
-                    smartSend();
-                }
+                if (assistantElements.input.value.trim()) smartSend();
             }, 100);
         }
-
         isListening = false;
         assistantElements.btnMic.classList.remove('listening');
         assistantElements.micIcon.style.display = 'block';
@@ -395,7 +347,6 @@ if (SpeechRecognition) {
 
     recognition.onresult = (event) => {
         let interimTranscript = '';
-
         for (let i = event.resultIndex; i < event.results.length; i++) {
             const transcript = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
@@ -404,11 +355,7 @@ if (SpeechRecognition) {
                 interimTranscript += transcript;
             }
         }
-
-        // Update last speech time whenever we get results
         lastSpeechTime = Date.now();
-
-        // Show current transcript in input field
         assistantElements.input.value = (finalTranscript + interimTranscript).trim();
     };
 
@@ -423,35 +370,23 @@ if (SpeechRecognition) {
 
         if (event.error === 'not-allowed') {
             assistantElements.response.className = 'chat-response error';
-            assistantElements.response.textContent = 'Mikrofon-Zugriff verweigert. Bitte erlaube den Zugriff in den Browser-Einstellungen.';
-        } else if (event.error === 'no-speech') {
-            // No speech detected - this is ok, just stop
-            if (finalTranscript.trim()) {
-                assistantElements.input.value = finalTranscript;
-                smartSend();
-            }
+            assistantElements.response.textContent = 'Mikrofon-Zugriff verweigert.';
+        } else if (event.error === 'no-speech' && finalTranscript.trim()) {
+            assistantElements.input.value = finalTranscript;
+            smartSend();
         }
     };
 } else {
-    // Hide mic button if not supported
-    if (assistantElements.btnMic) {
-        assistantElements.btnMic.style.display = 'none';
-    }
+    if (assistantElements.btnMic) assistantElements.btnMic.style.display = 'none';
 }
 
-// Silence detection functions
 function startSilenceDetection() {
-    stopSilenceDetection(); // Clear any existing timer
-
+    stopSilenceDetection();
     silenceTimer = setInterval(() => {
         if (lastSpeechTime && (Date.now() - lastSpeechTime) >= getSilenceDuration()) {
-            // Silence detected - stop recognition
-            console.log('Silence detected, stopping...');
-            if (recognition && isListening) {
-                recognition.stop();
-            }
+            if (recognition && isListening) recognition.stop();
         }
-    }, 100); // Check every 100ms
+    }, 100);
 }
 
 function stopSilenceDetection() {
@@ -461,14 +396,12 @@ function stopSilenceDetection() {
     }
 }
 
-// Toggle speech recognition
 function toggleSpeechRecognition() {
     if (!recognition) {
         assistantElements.response.className = 'chat-response error';
-        assistantElements.response.textContent = 'Spracherkennung wird von diesem Browser nicht unterstützt.';
+        assistantElements.response.textContent = 'Spracherkennung nicht unterstützt.';
         return;
     }
-
     if (isListening) {
         recognition.stop();
     } else {
@@ -478,61 +411,26 @@ function toggleSpeechRecognition() {
     }
 }
 
-// Mic button event listener
 if (assistantElements.btnMic) {
     assistantElements.btnMic.addEventListener('click', toggleSpeechRecognition);
 }
 
-// ==================== End Speech Recognition ====================
+// ==================== Auto-Play ====================
 
-// ==================== Output Target Toggle ====================
-
-// Load output target preference (false = Browser, true = Google Home)
-function loadOutputTargetPreference() {
-    const saved = localStorage.getItem('ghome_output_target');
-    if (saved !== null) {
-        assistantElements.outputTargetToggle.checked = saved === 'true';
-    }
-    updateOutputTargetUI();
-}
-
-// Save output target preference
-function saveOutputTargetPreference() {
-    localStorage.setItem('ghome_output_target', assistantElements.outputTargetToggle.checked);
-    updateOutputTargetUI();
-}
-
-// Update output target icons
-function updateOutputTargetUI() {
-    const isGoogleHome = assistantElements.outputTargetToggle.checked;
-    assistantElements.outputIconBrowser.style.opacity = isGoogleHome ? '0.4' : '1';
-    assistantElements.outputIconGHome.style.opacity = isGoogleHome ? '1' : '0.4';
-}
-
-// Initialize output target toggle
-loadOutputTargetPreference();
-assistantElements.outputTargetToggle.addEventListener('change', saveOutputTargetPreference);
-
-// ==================== End Output Target Toggle ====================
-
-// Load Auto-Play preference from localStorage
 function loadAutoPlayPreference() {
     const saved = localStorage.getItem('ghome_autoplay_tts');
-    if (saved !== null) {
-        assistantElements.autoPlayToggle.checked = saved === 'true';
-    }
+    if (saved !== null) assistantElements.autoPlayToggle.checked = saved === 'true';
 }
 
-// Save Auto-Play preference to localStorage
 function saveAutoPlayPreference() {
     localStorage.setItem('ghome_autoplay_tts', assistantElements.autoPlayToggle.checked);
 }
 
-// Initialize Auto-Play toggle
 loadAutoPlayPreference();
 assistantElements.autoPlayToggle.addEventListener('change', saveAutoPlayPreference);
 
-// Check assistant health
+// ==================== Health Check ====================
+
 async function checkAssistantHealth() {
     try {
         const response = await fetch('/api/assistant/health');
@@ -542,7 +440,8 @@ async function checkAssistantHealth() {
         if (assistantOnline) {
             assistantElements.indicator.classList.add('online');
             assistantElements.indicator.classList.remove('offline');
-            assistantElements.statusText.textContent = 'Online (Groq + Edge TTS)';
+            const voice = data.voice || 'Edge TTS';
+            assistantElements.statusText.textContent = `Online (${voice})`;
         } else {
             assistantElements.indicator.classList.remove('online');
             assistantElements.indicator.classList.add('offline');
@@ -556,14 +455,14 @@ async function checkAssistantHealth() {
     }
 }
 
-// Send text message (text response only)
+// ==================== Chat Functions ====================
+
 async function sendTextMessage(text) {
     if (!text.trim()) return;
 
     assistantElements.response.className = 'chat-response loading';
     assistantElements.response.innerHTML = 'Denke nach...';
-    assistantElements.btnSend.disabled = true;
-    assistantElements.btnMic.disabled = true;
+    setButtonsDisabled(true);
 
     try {
         const response = await fetch('/api/assistant/chat/text', {
@@ -574,35 +473,27 @@ async function sendTextMessage(text) {
         const data = await response.json();
 
         if (data.success) {
-            lastResponse = data.response;
-            assistantElements.response.className = 'chat-response';
-            assistantElements.response.innerHTML = '<div class="user-message">Du: ' + escapeHtml(text) + '</div><div class="assistant-message">' + escapeHtml(data.response) + '</div>';
+            showResponse(text, data.response);
             assistantElements.input.value = '';
         } else {
-            assistantElements.response.className = 'chat-response error';
-            assistantElements.response.textContent = data.error || 'Fehler bei der Verarbeitung';
+            showError(data.error || 'Fehler bei der Verarbeitung');
         }
     } catch (error) {
-        assistantElements.response.className = 'chat-response error';
-        assistantElements.response.textContent = 'Verbindungsfehler';
+        showError('Verbindungsfehler');
     }
 
-    assistantElements.btnSend.disabled = false;
-    assistantElements.btnMic.disabled = false;
+    setButtonsDisabled(false);
 }
 
-// Send with voice output - to Browser or Google Home based on toggle
 async function sendWithVoice(text) {
     if (!text.trim()) return;
 
-    const toGoogleHome = assistantElements.outputTargetToggle.checked;
+    const toGoogleHome = outputTarget === 'ghome';
     const endpoint = toGoogleHome ? '/api/assistant/chat' : '/api/assistant/chat/browser';
-    const loadingText = toGoogleHome ? 'Generiere Antwort und sende an Google Home...' : 'Generiere Antwort...';
 
     assistantElements.response.className = 'chat-response loading';
-    assistantElements.response.innerHTML = loadingText;
-    assistantElements.btnSend.disabled = true;
-    assistantElements.btnMic.disabled = true;
+    assistantElements.response.innerHTML = toGoogleHome ? 'Sende an Google Home...' : 'Generiere Audio...';
+    setButtonsDisabled(true);
 
     try {
         const response = await fetch(endpoint, {
@@ -613,49 +504,55 @@ async function sendWithVoice(text) {
         const data = await response.json();
 
         if (data.success) {
-            assistantElements.response.className = 'chat-response';
-            assistantElements.response.innerHTML = '<div class="user-message">Du: ' + escapeHtml(text) + '</div><div class="assistant-message">' + escapeHtml(data.response || data.message) + '</div>';
+            showResponse(text, data.response || data.message);
 
-            // If browser playback, play the audio
             if (!toGoogleHome && data.audio_url) {
                 playBrowserAudio(data.audio_url);
             }
 
-            // Clear radio/youtube selection if playing on Google Home
             if (toGoogleHome) {
                 document.querySelectorAll('.radio-btn, .yt-btn').forEach(btn => btn.classList.remove('active'));
             }
         } else {
-            assistantElements.response.className = 'chat-response error';
-            assistantElements.response.textContent = data.error || 'Fehler bei der Verarbeitung';
+            showError(data.error || 'Fehler bei der Verarbeitung');
         }
     } catch (error) {
-        assistantElements.response.className = 'chat-response error';
-        assistantElements.response.textContent = 'Verbindungsfehler';
+        showError('Verbindungsfehler');
     }
 
-    assistantElements.btnSend.disabled = false;
-    assistantElements.btnMic.disabled = false;
+    setButtonsDisabled(false);
     assistantElements.input.value = '';
 }
 
-// Play audio in browser
+function showResponse(question, answer) {
+    assistantElements.response.className = 'chat-response';
+    assistantElements.response.innerHTML =
+        '<div class="user-message">Du: ' + escapeHtml(question) + '</div>' +
+        '<div class="assistant-message">' + escapeHtml(answer) + '</div>';
+}
+
+function showError(message) {
+    assistantElements.response.className = 'chat-response error';
+    assistantElements.response.textContent = message;
+}
+
+function setButtonsDisabled(disabled) {
+    assistantElements.btnSend.disabled = disabled;
+    assistantElements.btnMic.disabled = disabled;
+}
+
 function playBrowserAudio(audioUrl) {
     const audio = assistantElements.browserAudio;
     audio.src = audioUrl;
-    audio.play().catch(err => {
-        console.error('Error playing audio:', err);
-    });
+    audio.play().catch(err => console.error('Error playing audio:', err));
 }
 
-// Escape HTML to prevent XSS
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-// Smart send - checks Auto-Play toggle
 function smartSend() {
     const text = assistantElements.input.value;
     if (assistantElements.autoPlayToggle.checked) {
@@ -665,15 +562,10 @@ function smartSend() {
     }
 }
 
-// Event listeners
 assistantElements.btnSend.addEventListener('click', smartSend);
-
 assistantElements.input.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        smartSend();
-    }
+    if (e.key === 'Enter') smartSend();
 });
 
-// Check health on load and periodically
 checkAssistantHealth();
 setInterval(checkAssistantHealth, 30000);

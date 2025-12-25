@@ -86,17 +86,13 @@
             <!-- Radio Section -->
             <div class="radio-section">
                 <h3>Radio</h3>
-                <div class="radio-grid" id="radioGrid">
-                    <!-- Stations loaded via JS -->
-                </div>
+                <div class="radio-grid" id="radioGrid"></div>
             </div>
 
             <!-- YouTube Section -->
             <div class="youtube-section">
                 <h3>YouTube</h3>
-                <div class="radio-grid" id="youtubeGrid">
-                    <!-- Videos loaded via JS -->
-                </div>
+                <div class="radio-grid" id="youtubeGrid"></div>
             </div>
 
             <!-- Voice Assistant Section -->
@@ -107,43 +103,49 @@
                     <span id="assistantStatusText">Offline</span>
                 </div>
 
-                <!-- Settings Row -->
-                <div class="assistant-settings">
-                    <!-- Auto-Play Toggle -->
-                    <div class="setting-item">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="autoPlayToggle">
-                            <span class="toggle-slider"></span>
-                        </label>
-                        <span class="setting-label">Auto-Play</span>
+                <!-- Settings -->
+                <div class="assistant-settings-grid">
+                    <!-- Row 1: Output Target -->
+                    <div class="setting-row">
+                        <span class="setting-label">Ausgabe:</span>
+                        <div class="output-buttons">
+                            <button id="btnOutputBrowser" class="output-btn active" title="Browser">
+                                <svg viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8h16v10z"/>
+                                </svg>
+                                Browser
+                            </button>
+                            <button id="btnOutputGHome" class="output-btn" title="Google Home">
+                                <svg viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+                                </svg>
+                                Google Home
+                            </button>
+                        </div>
                     </div>
 
-                    <!-- Output Target Toggle -->
-                    <div class="setting-item output-toggle">
-                        <svg viewBox="0 0 24 24" fill="currentColor" class="setting-icon" id="outputIconBrowser" title="Browser">
-                            <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8h16v10z"/>
-                        </svg>
-                        <label class="toggle-switch small">
-                            <input type="checkbox" id="outputTargetToggle">
-                            <span class="toggle-slider"></span>
-                        </label>
-                        <svg viewBox="0 0 24 24" fill="currentColor" class="setting-icon" id="outputIconGHome" title="Google Home">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
-                            <circle cx="12" cy="12" r="3"/>
-                        </svg>
-                    </div>
-
-                    <!-- Silence Duration -->
-                    <div class="setting-item silence-setting">
-                        <svg viewBox="0 0 24 24" fill="currentColor" class="setting-icon">
-                            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                        </svg>
-                        <input type="range" id="silenceDuration" min="1" max="5" step="0.5" value="2.5">
-                        <span id="silenceValue" class="setting-value">2.5s</span>
+                    <!-- Row 2: Auto-Play & Silence -->
+                    <div class="setting-row">
+                        <div class="setting-item-inline">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="autoPlayToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="setting-label">Auto-Play</span>
+                        </div>
+                        <div class="setting-item-inline silence-control">
+                            <svg viewBox="0 0 24 24" fill="currentColor" class="setting-icon-small">
+                                <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                                <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                            </svg>
+                            <span class="setting-label">Stille:</span>
+                            <input type="range" id="silenceDuration" min="1" max="5" step="0.5" value="2.5" class="silence-slider">
+                            <span id="silenceValue" class="setting-value">2.5s</span>
+                        </div>
                     </div>
                 </div>
 
+                <!-- Chat Input -->
                 <div class="assistant-chat">
                     <div class="chat-input-container">
                         <input type="text" id="assistantInput" placeholder="Frag mich etwas..." autocomplete="off">
@@ -156,23 +158,19 @@
                                 <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
                             </svg>
                         </button>
-                        <button id="btnAssistantSend" class="assistant-btn" title="Senden">
+                        <button id="btnAssistantSend" class="assistant-btn send-btn" title="Senden">
                             <svg viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
                             </svg>
                         </button>
                     </div>
-                    <div class="chat-response" id="chatResponse">
-                        <!-- Response will appear here -->
-                    </div>
+                    <div class="chat-response" id="chatResponse"></div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Hidden audio player for browser playback -->
     <audio id="browserAudio" style="display:none"></audio>
-
     <script src="/static/app.js"></script>
 </body>
 </html>
