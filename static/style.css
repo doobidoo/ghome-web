@@ -751,3 +751,37 @@ header h1 {
         font-size: 1.1rem;
     }
 }
+
+/* Version Info */
+.version-info {
+    position: fixed;
+    bottom: 8px;
+    right: 12px;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    opacity: 0.6;
+}
+
+/* Debug Log - visible on screen for iOS */
+.debug-log {
+    position: fixed;
+    bottom: 30px;
+    left: 8px;
+    right: 8px;
+    max-height: 100px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 0.6rem;
+    color: #4ade80;
+    background: rgba(0, 0, 0, 0.85);
+    padding: 6px;
+    border-radius: 4px;
+    z-index: 9999;
+    display: none;
+}
+.debug-log.active {
+    display: block;
+}
+.debug-log .error {
+    color: #f87171;
+}
