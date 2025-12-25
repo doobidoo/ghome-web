@@ -1,0 +1,15 @@
+[Unit]
+Description=Google Home Web Controller
+After=network.target
+
+[Service]
+Type=simple
+User=hkr
+WorkingDirectory=/home/hkr/repositories/ghome-web
+Environment=PATH=/home/hkr/repositories/ghome-web/venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/hkr/repositories/ghome-web/venv/bin/python app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name replace-wildcards="yes">ghome</name>
+  <service>
+    <type>_http._tcp</type>
+    <host-name>ghome.local</host-name>
+    <port>5000</port>
+    <txt-record>path=/</txt-record>
+    <txt-record>description=Control Google Home devices</txt-record>
+  </service>
+</service-group>

@@ -1,0 +1,13 @@
+[Unit]
+Description=Avahi alias for ghome.local
+After=avahi-daemon.service
+Requires=avahi-daemon.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/avahi-publish -a -R ghome.local 10.0.1.70
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

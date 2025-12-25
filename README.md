@@ -114,6 +114,42 @@ Open in browser:
 - Local: http://localhost:5000
 - Network: http://YOUR_IP:5000
 
+## Production Deployment (Pi-Hole)
+
+The app is deployed on Pi-Hole server (10.0.1.56) with systemd and lighttpd reverse proxy.
+
+### Access URL
+- **http://ghome.home** (from any device using Pi-Hole DNS)
+
+### Systemd Service
+```bash
+# Service file: /etc/systemd/system/ghome-web.service
+sudo systemctl status ghome-web
+sudo systemctl restart ghome-web
+```
+
+### Lighttpd Reverse Proxy
+Config: `/etc/lighttpd/conf-enabled/20-ghome.conf`
+```
+$HTTP["host"] =~ "^ghome\.home$|^ghome$" {
+    auth.require = ()
+    proxy.server = ( "" => ( ( "host" => "127.0.0.1", "port" => 5000 ) ) )
+}
+```
+
+### Pi-Hole v6 DNS Configuration
+**Important**: Pi-Hole v6 does NOT use `/etc/dnsmasq.d/` or `/etc/pihole/custom.list`.
+
+Edit `/etc/pihole/pihole.toml`:
+```toml
+hosts = [ "10.0.1.56 ghome.home", "10.0.1.56 ghome" ]
+```
+
+Then restart: `sudo systemctl restart pihole-FTL`
+
+### Why .home instead of .local?
+systemd-resolved routes `.local` domains to mDNS (Avahi), not DNS. Using `.home` ensures proper DNS resolution via Pi-Hole.
+
 ## API Endpoints
 
 ### Playback Control
