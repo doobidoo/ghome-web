@@ -66,14 +66,14 @@ Edit `app.py` to configure your setup:
 
 ```python
 # Your Google Home device name (as shown in Google Home app)
-DEVICE = "Familienzimmer"
+DEVICE = "Your-Device-Name"
 
 # Your server's IP (for network access)
-LOCAL_IP = "10.0.1.70"
+LOCAL_IP = "192.168.1.100"
 LOCAL_PORT = 5000
 
 # Optional: Voice Assistant API endpoint
-VOICE_ASSISTANT_API = "http://10.0.1.39:5001"
+VOICE_ASSISTANT_API = "http://192.168.1.50:5001"
 ```
 
 ### Adding Radio Stations
@@ -114,22 +114,38 @@ Open in browser:
 - Local: http://localhost:5000
 - Network: http://YOUR_IP:5000
 
-## Production Deployment (Pi-Hole)
+## Production Deployment
 
-The app is deployed on Pi-Hole server (10.0.1.56) with systemd and lighttpd reverse proxy.
-
-### Access URL
-- **http://ghome.home** (from any device using Pi-Hole DNS)
+For production, deploy with systemd and a reverse proxy (nginx/lighttpd).
 
 ### Systemd Service
-```bash
-# Service file: /etc/systemd/system/ghome-web.service
-sudo systemctl status ghome-web
-sudo systemctl restart ghome-web
+
+Create `/etc/systemd/system/ghome-web.service`:
+```ini
+[Unit]
+Description=Google Home Web Controller
+After=network.target
+
+[Service]
+Type=simple
+User=your-user
+WorkingDirectory=/path/to/ghome-web
+Environment=PATH=/path/to/ghome-web/venv/bin:/usr/bin
+ExecStart=/path/to/ghome-web/venv/bin/python app.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-### Lighttpd Reverse Proxy
-Config: `/etc/lighttpd/conf-enabled/20-ghome.conf`
+```bash
+sudo systemctl enable ghome-web
+sudo systemctl start ghome-web
+```
+
+### Reverse Proxy (Lighttpd)
+
+Config for `/etc/lighttpd/conf-enabled/20-ghome.conf`:
 ```
 $HTTP["host"] =~ "^ghome\.home$|^ghome$" {
     auth.require = ()
@@ -138,11 +154,12 @@ $HTTP["host"] =~ "^ghome\.home$|^ghome$" {
 ```
 
 ### Pi-Hole v6 DNS Configuration
+
 **Important**: Pi-Hole v6 does NOT use `/etc/dnsmasq.d/` or `/etc/pihole/custom.list`.
 
 Edit `/etc/pihole/pihole.toml`:
 ```toml
-hosts = [ "10.0.1.56 ghome.home", "10.0.1.56 ghome" ]
+hosts = [ "YOUR_SERVER_IP ghome.home", "YOUR_SERVER_IP ghome" ]
 ```
 
 Then restart: `sudo systemctl restart pihole-FTL`
