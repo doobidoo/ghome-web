@@ -344,10 +344,44 @@ def shodh_recall(query, limit=3):
         print(f"SHODH recall error: {e}")
     return []
 
-def shodh_remember(content, memory_type="Conversation", tags=None):
+def reformulate_for_storage(content):
+    """Use LLM to reformulate user input into factual third-person statement."""
+    if not groq_client:
+        return content
+    try:
+        result = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": """Formuliere den folgenden Text als faktische Aussage in der dritten Person um.
+Regeln:
+- Keine Ich-Form, sondern "Der Benutzer..." oder direkte Fakten
+- Kurz und prägnant (1 Satz)
+- Grammatikalisch korrekt
+- Nur den umformulierten Text ausgeben, keine Erklärungen
+
+Beispiele:
+"mein Name ist Henry" → "Der Benutzer heisst Henry."
+"ich mag Pizza" → "Der Benutzer mag Pizza."
+"dass ich in Zürich wohne" → "Der Benutzer wohnt in Zürich."
+"Meeting morgen um 10" → "Meeting ist morgen um 10 Uhr geplant.\""""},
+                {"role": "user", "content": content}
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.3,
+            max_tokens=100,
+        )
+        return result.choices[0].message.content.strip()
+    except:
+        return content  # Fallback to original if LLM fails
+
+def shodh_remember(content, memory_type="Conversation", tags=None, reformulate=False):
     """Store a new memory in SHODH."""
     if not SHODH_API_KEY:
         return None
+
+    # Reformulate if requested (for user-provided explicit memories)
+    if reformulate:
+        content = reformulate_for_storage(content)
+
     try:
         payload = {
             "content": content,
@@ -481,11 +515,13 @@ def get_groq_response(text, use_memory=True):
             try:
                 if store_reason == "explicit":
                     # Store only the extracted content for explicit triggers
+                    # Reformulate to third-person factual statement
                     memory_content = extract_memory_content(text)
                     shodh_remember(
                         memory_content,
                         memory_type="Learning",
-                        tags=["ghome-assistant", "explicit", "user-info"]
+                        tags=["ghome-assistant", "explicit", "user-info"],
+                        reformulate=True  # LLM reformulates to proper grammar
                     )
                 else:
                     # Store conversation for substantive interactions
