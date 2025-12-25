@@ -82,6 +82,49 @@
             <div class="app-info">
                 <span id="appName"></span>
             </div>
+
+            <!-- Radio Section -->
+            <div class="radio-section">
+                <h3>Radio</h3>
+                <div class="radio-grid" id="radioGrid">
+                    <!-- Stations loaded via JS -->
+                </div>
+            </div>
+
+            <!-- YouTube Section -->
+            <div class="youtube-section">
+                <h3>YouTube</h3>
+                <div class="radio-grid" id="youtubeGrid">
+                    <!-- Videos loaded via JS -->
+                </div>
+            </div>
+
+            <!-- Voice Assistant Section -->
+            <div class="assistant-section">
+                <h3>Voice Assistant</h3>
+                <div class="assistant-status" id="assistantStatus">
+                    <span class="status-indicator offline" id="assistantIndicator"></span>
+                    <span id="assistantStatusText">Offline</span>
+                </div>
+                <div class="assistant-chat">
+                    <div class="chat-input-container">
+                        <input type="text" id="assistantInput" placeholder="Frag mich etwas..." autocomplete="off">
+                        <button id="btnAssistantSend" class="assistant-btn" title="Senden">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                            </svg>
+                        </button>
+                        <button id="btnAssistantSpeak" class="assistant-btn speak-btn" title="Auf Google Home abspielen">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="chat-response" id="chatResponse">
+                        <!-- Response will appear here -->
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
