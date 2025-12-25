@@ -289,9 +289,103 @@ let isListening = false;
 let silenceTimer = null;
 let lastSpeechTime = null;
 let finalTranscript = '';
+let recognitionReady = true;  // Track if recognition can be started
 
 function getSilenceDuration() {
     return parseFloat(assistantElements.silenceDuration.value) * 1000;
+}
+
+function createRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return null;
+
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'de-DE';
+
+    rec.onstart = () => {
+        console.log('Speech recognition started');
+        isListening = true;
+        recognitionReady = false;
+        finalTranscript = '';
+        lastSpeechTime = Date.now();
+        assistantElements.btnMic.classList.add('listening');
+        assistantElements.micIcon.style.display = 'none';
+        assistantElements.micActiveIcon.style.display = 'block';
+        assistantElements.input.placeholder = 'Ich höre zu...';
+        startSilenceDetection();
+    };
+
+    rec.onend = () => {
+        console.log('Speech recognition ended');
+        stopSilenceDetection();
+        const hadTranscript = finalTranscript.trim() && isListening;
+
+        // Reset state
+        isListening = false;
+        assistantElements.btnMic.classList.remove('listening');
+        assistantElements.micIcon.style.display = 'block';
+        assistantElements.micActiveIcon.style.display = 'none';
+        assistantElements.input.placeholder = 'Frag mich etwas...';
+
+        // Process transcript if we have one
+        if (hadTranscript) {
+            assistantElements.input.value = finalTranscript;
+            setTimeout(() => {
+                if (assistantElements.input.value.trim()) smartSend();
+            }, 100);
+        }
+
+        // iOS Safari: recreate recognition after use
+        setTimeout(() => {
+            recognition = createRecognition();
+            recognitionReady = true;
+            console.log('Speech recognition ready for next use');
+        }, 300);
+    };
+
+    rec.onresult = (event) => {
+        let interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript += transcript + ' ';
+            } else {
+                interimTranscript += transcript;
+            }
+        }
+        lastSpeechTime = Date.now();
+        assistantElements.input.value = (finalTranscript + interimTranscript).trim();
+    };
+
+    rec.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        stopSilenceDetection();
+        isListening = false;
+        assistantElements.btnMic.classList.remove('listening');
+        assistantElements.micIcon.style.display = 'block';
+        assistantElements.micActiveIcon.style.display = 'none';
+        assistantElements.input.placeholder = 'Frag mich etwas...';
+
+        if (event.error === 'not-allowed') {
+            assistantElements.response.className = 'chat-response error';
+            assistantElements.response.textContent = 'Mikrofon-Zugriff verweigert.';
+        } else if (event.error === 'no-speech' && finalTranscript.trim()) {
+            assistantElements.input.value = finalTranscript;
+            smartSend();
+        } else if (event.error === 'aborted') {
+            console.log('Recognition aborted, recreating...');
+        }
+
+        // Recreate after error
+        setTimeout(() => {
+            recognition = createRecognition();
+            recognitionReady = true;
+        }, 300);
+    };
+
+    return rec;
 }
 
 function loadSilencePreference() {
@@ -311,73 +405,10 @@ function saveSilencePreference() {
 loadSilencePreference();
 assistantElements.silenceDuration.addEventListener('input', saveSilencePreference);
 
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-if (SpeechRecognition) {
-    recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'de-DE';
-
-    recognition.onstart = () => {
-        isListening = true;
-        finalTranscript = '';
-        lastSpeechTime = Date.now();
-        assistantElements.btnMic.classList.add('listening');
-        assistantElements.micIcon.style.display = 'none';
-        assistantElements.micActiveIcon.style.display = 'block';
-        assistantElements.input.placeholder = 'Ich höre zu...';
-        startSilenceDetection();
-    };
-
-    recognition.onend = () => {
-        stopSilenceDetection();
-        if (finalTranscript.trim() && isListening) {
-            assistantElements.input.value = finalTranscript;
-            setTimeout(() => {
-                if (assistantElements.input.value.trim()) smartSend();
-            }, 100);
-        }
-        isListening = false;
-        assistantElements.btnMic.classList.remove('listening');
-        assistantElements.micIcon.style.display = 'block';
-        assistantElements.micActiveIcon.style.display = 'none';
-        assistantElements.input.placeholder = 'Frag mich etwas...';
-    };
-
-    recognition.onresult = (event) => {
-        let interimTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-            const transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-                finalTranscript += transcript + ' ';
-            } else {
-                interimTranscript += transcript;
-            }
-        }
-        lastSpeechTime = Date.now();
-        assistantElements.input.value = (finalTranscript + interimTranscript).trim();
-    };
-
-    recognition.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        stopSilenceDetection();
-        isListening = false;
-        assistantElements.btnMic.classList.remove('listening');
-        assistantElements.micIcon.style.display = 'block';
-        assistantElements.micActiveIcon.style.display = 'none';
-        assistantElements.input.placeholder = 'Frag mich etwas...';
-
-        if (event.error === 'not-allowed') {
-            assistantElements.response.className = 'chat-response error';
-            assistantElements.response.textContent = 'Mikrofon-Zugriff verweigert.';
-        } else if (event.error === 'no-speech' && finalTranscript.trim()) {
-            assistantElements.input.value = finalTranscript;
-            smartSend();
-        }
-    };
-} else {
-    if (assistantElements.btnMic) assistantElements.btnMic.style.display = 'none';
+// Initialize speech recognition (will be recreated after each use for iOS compatibility)
+recognition = createRecognition();
+if (!recognition && assistantElements.btnMic) {
+    assistantElements.btnMic.style.display = 'none';
 }
 
 function startSilenceDetection() {
@@ -402,12 +433,38 @@ function toggleSpeechRecognition() {
         assistantElements.response.textContent = 'Spracherkennung nicht unterstützt.';
         return;
     }
+
     if (isListening) {
         recognition.stop();
-    } else {
+        return;
+    }
+
+    // Check if recognition is ready (iOS needs time to recreate)
+    if (!recognitionReady) {
+        console.log('Recognition not ready yet, waiting...');
+        setTimeout(toggleSpeechRecognition, 200);
+        return;
+    }
+
+    try {
         finalTranscript = '';
         assistantElements.input.value = '';
         recognition.start();
+    } catch (e) {
+        console.error('Failed to start recognition:', e);
+        // Try to recreate and start again
+        recognition = createRecognition();
+        if (recognition) {
+            setTimeout(() => {
+                try {
+                    recognition.start();
+                } catch (e2) {
+                    console.error('Still failed:', e2);
+                    assistantElements.response.className = 'chat-response error';
+                    assistantElements.response.textContent = 'Spracherkennung Fehler. Bitte Seite neu laden.';
+                }
+            }, 300);
+        }
     }
 }
 
@@ -445,7 +502,7 @@ async function checkAssistantHealth() {
             assistantElements.indicator.classList.remove('offline');
             const llm = data.llm || 'Groq';
             const ttsVoice = data.voice || 'Edge TTS';
-            const stt = SpeechRecognition ? 'Web Speech API' : '-';
+            const stt = recognition ? 'Web Speech API' : '-';
             let statusText = `LLM: ${llm} | STT: ${stt} | TTS: ${ttsVoice}`;
             if (data.memory_available) {
                 statusText += ` | Mem: ${data.memory_count}`;
