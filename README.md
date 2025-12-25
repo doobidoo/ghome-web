@@ -1,6 +1,6 @@
 # Google Home Web Controller
 
-A Flask web application to control Google Home / Chromecast devices via [catt](https://github.com/skorokithakis/catt).
+A Flask web application to control Google Home / Chromecast devices via [catt](https://github.com/skorokithakis/catt), with an integrated AI Voice Assistant.
 
 ![Dark Theme UI](https://img.shields.io/badge/theme-dark-121212)
 ![Python](https://img.shields.io/badge/python-3.8+-blue)
@@ -28,16 +28,25 @@ Quick access to curated YouTube videos:
 - Worship compilations (Hillsong, etc.)
 - Jazz playlists (Smooth Jazz, Jazz Fusion)
 
-### Voice Assistant Integration
-Optional integration with a separate Voice Assistant API:
-- Text-based chat interface
-- Text-to-speech output to Google Home
-- Requires separate Voice Assistant server
+### Voice Assistant "Leni"
+Integrated AI assistant with Swiss personality:
+- **LLM**: Groq (Llama 3.3 70B)
+- **TTS**: Edge TTS (de-CH-LeniNeural - Swiss German voice)
+- **STT**: Web Speech API (browser-based)
+- **Memory**: SHODH Cloudflare semantic memory
+- **Persona**: Professional Swiss assistant
+
+#### Memory Features
+- Semantic recall of previous conversations
+- Intelligent trigger patterns for storage:
+  - "Merke dir: ..." / "Wichtig: ..." - explicit storage
+  - Casual greetings are skipped automatically
+- Visual feedback: Memory stored (disk icon), Memories used (brain icon)
 
 ## Requirements
 
 - Python 3.8+
-- Flask, Requests
+- Flask, Requests, Groq, Edge-TTS
 - [catt](https://github.com/skorokithakis/catt) installed and configured
 - Google Home / Chromecast device on the same network
 
@@ -53,7 +62,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Install dependencies
-pip install flask requests
+pip install flask requests groq edge-tts
 
 # Install catt (system-wide or via pipx)
 pipx install catt
@@ -62,49 +71,81 @@ pipx install catt
 
 ## Configuration
 
-Edit `app.py` to configure your setup:
+All configuration is in `config.py`:
 
 ```python
-# Your Google Home device name (as shown in Google Home app)
-DEVICE = "Your-Device-Name"
+# Device name (as shown in Google Home app)
+DEVICE = "Familienzimmer"
 
-# Your server's IP (for network access)
-LOCAL_IP = "192.168.1.100"
+# Voice Assistant
+TTS_VOICE = "de-CH-LeniNeural"  # Swiss German female voice
+ASSISTANT_PERSONA = """Du bist Leni, eine professionelle Schweizer Assistentin..."""
+
+# Network settings
+LOCAL_IP = "10.0.1.56"
 LOCAL_PORT = 5000
 
-# Optional: Voice Assistant API endpoint
-VOICE_ASSISTANT_API = "http://192.168.1.50:5001"
+# Media
+RADIO_STATIONS = { ... }
+YOUTUBE_FAVORITES = { ... }
 ```
 
-### Adding Radio Stations
+### Environment Variables
 
-Edit the `RADIO_STATIONS` dictionary in `app.py`:
+Set these for the Voice Assistant:
+
+```bash
+export GROQ_API_KEY="your-groq-api-key"
+export SHODH_CLOUDFLARE_URL="https://your-worker.workers.dev"
+export SHODH_CLOUDFLARE_API_KEY="your-api-key"
+```
+
+### Customizing Leni's Personality
+
+Edit `ASSISTANT_PERSONA` in `config.py`:
+
+```python
+ASSISTANT_PERSONA = """Du bist Leni, eine professionelle Schweizer Assistentin.
+
+Persönlichkeit:
+- Kompetent, effizient und zuverlässig
+- Höflich und respektvoll, aber nicht übertrieben förmlich
+- Präzise Antworten ohne unnötiges Geplauder
+- Gelegentlich dezente Schweizer Höflichkeitsformen (Grüezi, Merci)
+
+Sprachstil:
+- Klares Hochdeutsch mit leichtem Schweizer Einschlag
+- Kurze, prägnante Sätze (max. 2-3 Sätze pro Antwort)
+- Professionell aber warmherzig
+- Für Sprachausgabe optimiert (keine Sonderzeichen, Listen vermeiden)
+
+Du hilfst bei Fragen, merkst dir wichtige Informationen und gibst hilfreiche Antworten."""
+```
+
+### Adding Radio Stations / YouTube Favorites
+
+Edit the dictionaries in `config.py`:
 
 ```python
 RADIO_STATIONS = {
     "Station Name": "https://stream-url.com/stream",
-    # ...
 }
-```
 
-### Adding YouTube Favorites
-
-Edit the `YOUTUBE_FAVORITES` dictionary in `app.py`:
-
-```python
 YOUTUBE_FAVORITES = {
     "Video Name": "https://www.youtube.com/watch?v=VIDEO_ID",
-    # ...
 }
 ```
 
-**Note**: Live streams don't work (DRM protected). Use regular videos only.
+**Note**: YouTube live streams don't work (DRM protected). Use regular videos only.
 
 ## Usage
 
 ```bash
 # Activate virtual environment
 source venv/bin/activate
+
+# Set environment variables
+export GROQ_API_KEY="your-key"
 
 # Start the server
 python app.py
@@ -113,6 +154,27 @@ python app.py
 Open in browser:
 - Local: http://localhost:5000
 - Network: http://YOUR_IP:5000
+
+## Memory Trigger Patterns
+
+The Voice Assistant uses intelligent patterns to decide what to store:
+
+### Explicit Storage Triggers
+- "Merke dir: ..." / "Merk dir: ..."
+- "Speichere: ..." / "Speicher: ..."
+- "Wichtig: ..." / "Notiz: ..." / "Info: ..."
+- "Vergiss nicht: ..."
+- "Remember: ..."
+
+### Skip Patterns (not stored)
+- Greetings: "Hallo", "Hi", "Grüezi", etc.
+- Casual: "Wie geht's", "Danke", "OK"
+- Short responses: "Ja", "Nein"
+
+### Recall Triggers
+- "Was weisst du über..."
+- "Erinnerst du dich an..."
+- "Was habe ich dir gesagt über..."
 
 ## Production Deployment
 
@@ -128,10 +190,13 @@ After=network.target
 
 [Service]
 Type=simple
-User=your-user
-WorkingDirectory=/path/to/ghome-web
-Environment=PATH=/path/to/ghome-web/venv/bin:/usr/bin
-ExecStart=/path/to/ghome-web/venv/bin/python app.py
+User=hkr
+WorkingDirectory=/home/hkr/ghome-web
+Environment=PATH=/home/hkr/ghome-web/venv/bin:/usr/bin
+Environment=GROQ_API_KEY=your-key
+Environment=SHODH_CLOUDFLARE_URL=https://your-worker.workers.dev
+Environment=SHODH_CLOUDFLARE_API_KEY=your-key
+ExecStart=/home/hkr/ghome-web/venv/bin/python app.py
 Restart=always
 
 [Install]
@@ -198,19 +263,32 @@ systemd-resolved routes `.local` domains to mDNS (Avahi), not DNS. Using `.home`
 | `/api/youtube/list` | GET | List all favorites |
 | `/api/youtube/play/<name>` | POST | Play a video |
 
-### Voice Assistant (optional)
+### Voice Assistant
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/assistant/health` | GET | Check API availability |
-| `/api/assistant/chat` | POST | Chat with audio output |
+| `/api/assistant/health` | GET | Check API availability + memory status |
+| `/api/assistant/chat` | POST | Chat with audio output to Google Home |
 | `/api/assistant/chat/text` | POST | Chat with text response only |
+| `/api/assistant/chat/browser` | POST | Chat with audio for browser playback |
+
+**Response format:**
+```json
+{
+  "success": true,
+  "input": "user question",
+  "response": "assistant answer",
+  "memory_count": 3,
+  "memory_stored": true
+}
+```
 
 ## Project Structure
 
 ```
 ghome-web/
 ├── app.py              # Flask backend
+├── config.py           # Configuration (persona, stations, settings)
 ├── requirements.txt    # Python dependencies
 ├── templates/
 │   └── index.html      # Main UI template
@@ -232,8 +310,13 @@ ghome-web/
 - Check catt output for errors
 
 ### Voice Assistant offline
-- The Voice Assistant API runs on a separate server
-- Check if the API is reachable at the configured endpoint
+- Check GROQ_API_KEY environment variable
+- Verify Groq API is reachable
+- Check logs: `journalctl -u ghome-web -f`
+
+### Memory not working
+- Check SHODH_CLOUDFLARE_URL and SHODH_CLOUDFLARE_API_KEY
+- Test API: `curl -H "Authorization: Bearer $KEY" $URL/api/stats`
 
 ## License
 
