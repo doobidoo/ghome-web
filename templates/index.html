@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Familienzimmer - Google Home Controller</title>
-    <link rel="stylesheet" href="/static/style.css?v=1.0.6">
+    <link rel="stylesheet" href="/static/style.css?v=1.0.7">
 </head>
 <body>
     <div class="container">
@@ -143,6 +143,22 @@
                             <span id="silenceValue" class="setting-value">2.5s</span>
                         </div>
                     </div>
+
+                    <!-- Row 3: Continuous Dialog -->
+                    <div class="setting-row">
+                        <div class="setting-item-inline">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="continuousDialogToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="setting-label">Gespräch halten</span>
+                        </div>
+                        <div class="setting-item-inline">
+                            <span class="setting-label">Pause:</span>
+                            <input type="range" id="dialogPause" min="1" max="5" step="0.5" value="2" class="silence-slider">
+                            <span id="dialogPauseValue" class="setting-value">2s</span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Chat Input -->
@@ -172,7 +188,7 @@
 
     <audio id="browserAudio" playsinline webkit-playsinline preload="auto" style="display:none"></audio>
     <div id="debugLog" class="debug-log"></div>
-    <div class="version-info" id="versionInfo">v1.0.6</div>
-    <script src="/static/app.js?v=1.0.6"></script>
+    <div class="version-info" id="versionInfo">v1.0.7</div>
+    <script src="/static/app.js?v=1.0.7"></script>
 </body>
 </html>

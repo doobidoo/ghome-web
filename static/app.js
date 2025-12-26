@@ -1,5 +1,5 @@
 // Google Home Web Controller - Frontend JS
-// Version 1.0.6
+// Version 1.0.7
 
 // Debug log (toggle by clicking version number, persisted in localStorage)
 const debugLog = document.getElementById('debugLog');
@@ -9,7 +9,7 @@ let debugEnabled = localStorage.getItem('ghome_debug') === 'true';
 // Apply saved debug state on load
 if (debugEnabled && debugLog) {
     debugLog.classList.add('active');
-    if (versionInfo) versionInfo.textContent = 'v1.0.6 [DBG]';
+    if (versionInfo) versionInfo.textContent = 'v1.0.7 [DBG]';
 }
 
 // Toggle debug log by clicking version number
@@ -19,7 +19,7 @@ if (versionInfo) {
         debugEnabled = !debugEnabled;
         localStorage.setItem('ghome_debug', debugEnabled);
         debugLog.classList.toggle('active', debugEnabled);
-        versionInfo.textContent = debugEnabled ? 'v1.0.6 [DBG]' : 'v1.0.6';
+        versionInfo.textContent = debugEnabled ? 'v1.0.7 [DBG]' : 'v1.0.7';
     });
 }
 
@@ -292,7 +292,10 @@ const assistantElements = {
     btnOutputGHome: document.getElementById('btnOutputGHome'),
     silenceDuration: document.getElementById('silenceDuration'),
     silenceValue: document.getElementById('silenceValue'),
-    browserAudio: document.getElementById('browserAudio')
+    browserAudio: document.getElementById('browserAudio'),
+    continuousDialogToggle: document.getElementById('continuousDialogToggle'),
+    dialogPause: document.getElementById('dialogPause'),
+    dialogPauseValue: document.getElementById('dialogPauseValue')
 };
 
 let assistantOnline = false;
@@ -574,6 +577,52 @@ function saveAutoPlayPreference() {
 
 loadAutoPlayPreference();
 assistantElements.autoPlayToggle.addEventListener('change', saveAutoPlayPreference);
+
+// ==================== Continuous Dialog ====================
+
+let continuousDialogEnabled = false;
+
+function loadContinuousDialogPreference() {
+    const saved = localStorage.getItem('ghome_continuous_dialog');
+    if (saved !== null) {
+        continuousDialogEnabled = saved === 'true';
+        assistantElements.continuousDialogToggle.checked = continuousDialogEnabled;
+    }
+    const pauseSaved = localStorage.getItem('ghome_dialog_pause');
+    if (pauseSaved !== null) {
+        assistantElements.dialogPause.value = pauseSaved;
+        assistantElements.dialogPauseValue.textContent = pauseSaved + 's';
+    }
+}
+
+function saveContinuousDialogPreference() {
+    continuousDialogEnabled = assistantElements.continuousDialogToggle.checked;
+    localStorage.setItem('ghome_continuous_dialog', continuousDialogEnabled);
+    dbg('Continuous dialog: ' + (continuousDialogEnabled ? 'ON' : 'OFF'));
+}
+
+function saveDialogPausePreference() {
+    const value = assistantElements.dialogPause.value;
+    localStorage.setItem('ghome_dialog_pause', value);
+    assistantElements.dialogPauseValue.textContent = value + 's';
+}
+
+loadContinuousDialogPreference();
+assistantElements.continuousDialogToggle.addEventListener('change', saveContinuousDialogPreference);
+assistantElements.dialogPause.addEventListener('input', saveDialogPausePreference);
+
+// Audio ended handler for continuous dialog
+assistantElements.browserAudio.addEventListener('ended', () => {
+    if (continuousDialogEnabled && !isListening) {
+        const pauseMs = parseFloat(assistantElements.dialogPause.value) * 1000;
+        dbg('Audio ended, restarting mic in ' + pauseMs + 'ms');
+        setTimeout(() => {
+            if (continuousDialogEnabled && !isListening) {
+                toggleSpeechRecognition();
+            }
+        }, pauseMs);
+    }
+});
 
 // ==================== Health Check ====================
 
