@@ -24,6 +24,41 @@ from config import (
 
 app = Flask(__name__)
 
+def format_api_error(error):
+    """Convert API errors to user-friendly German messages."""
+    error_str = str(error)
+
+    # Already formatted (starts with German message) - return as-is
+    if error_str.startswith(('API-Limit', 'API-Auth', 'Zeitüberschreitung', 'Verbindungsfehler', 'Fehler bei der')):
+        return error_str
+
+    # Rate limit errors
+    if 'rate_limit' in error_str.lower() or '429' in error_str:
+        # Try to extract wait time
+        wait_match = re.search(r'try again in (\d+m?\d*\.?\d*s?)', error_str, re.IGNORECASE)
+        if wait_match:
+            wait_time = wait_match.group(1)
+            return f"API-Limit erreicht. Bitte warte {wait_time} und versuch es nochmal."
+        return "API-Limit erreicht. Bitte warte kurz und versuch es nochmal."
+
+    # Authentication errors
+    if 'authentication' in error_str.lower() or '401' in error_str:
+        return "API-Authentifizierung fehlgeschlagen. Bitte API-Key prüfen."
+
+    # Timeout errors
+    if 'timeout' in error_str.lower():
+        return "Zeitüberschreitung bei der Anfrage. Bitte nochmal versuchen."
+
+    # Connection errors
+    if 'connection' in error_str.lower():
+        return "Verbindungsfehler. Bitte Internetverbindung prüfen."
+
+    # Generic error - shorten if too long
+    if len(error_str) > 100:
+        return "Fehler bei der Verarbeitung. Bitte später nochmal versuchen."
+
+    return f"Fehler: {error_str}"
+
 # Groq API for LLM (set via environment variable)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
@@ -536,7 +571,8 @@ def get_groq_response(text, use_memory=True):
 
         return response, memory_count, {"stored": memory_stored, "reason": store_reason}
     except Exception as e:
-        return f"Fehler bei der Verarbeitung: {str(e)}", 0, None
+        # Use format_api_error for user-friendly messages
+        raise Exception(format_api_error(e))
 
 async def generate_tts_audio(text, output_file):
     """Generate TTS audio using Edge TTS."""
@@ -639,7 +675,7 @@ def assistant_chat():
         })
 
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": format_api_error(e)}), 500
 
 @app.route('/api/assistant/chat/text', methods=['POST'])
 def assistant_chat_text():
@@ -663,7 +699,7 @@ def assistant_chat_text():
             "memory_stored": memory_info.get("stored", False) if memory_info else False
         })
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": format_api_error(e)}), 500
 
 @app.route('/api/assistant/chat/browser', methods=['POST'])
 def assistant_chat_browser():
@@ -699,7 +735,7 @@ def assistant_chat_browser():
         })
 
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": format_api_error(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
