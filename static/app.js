@@ -1,18 +1,25 @@
 // Google Home Web Controller - Frontend JS
-// Version 1.0.5
+// Version 1.0.6
 
-// Debug log (toggle by clicking version number)
+// Debug log (toggle by clicking version number, persisted in localStorage)
 const debugLog = document.getElementById('debugLog');
 const versionInfo = document.getElementById('versionInfo');
-let debugEnabled = false;
+let debugEnabled = localStorage.getItem('ghome_debug') === 'true';
+
+// Apply saved debug state on load
+if (debugEnabled && debugLog) {
+    debugLog.classList.add('active');
+    if (versionInfo) versionInfo.textContent = 'v1.0.6 [DBG]';
+}
 
 // Toggle debug log by clicking version number
 if (versionInfo) {
     versionInfo.style.cursor = 'pointer';
     versionInfo.addEventListener('click', () => {
         debugEnabled = !debugEnabled;
+        localStorage.setItem('ghome_debug', debugEnabled);
         debugLog.classList.toggle('active', debugEnabled);
-        versionInfo.textContent = debugEnabled ? 'v1.0.5 [DBG]' : 'v1.0.5';
+        versionInfo.textContent = debugEnabled ? 'v1.0.6 [DBG]' : 'v1.0.6';
     });
 }
 
@@ -572,8 +579,10 @@ assistantElements.autoPlayToggle.addEventListener('change', saveAutoPlayPreferen
 
 async function checkAssistantHealth() {
     try {
+        dbg('Health check...');
         const response = await fetch('/api/assistant/health');
         const data = await response.json();
+        dbg('Health response: api_available=' + data.api_available);
         assistantOnline = data.api_available;
 
         if (assistantOnline) {
@@ -593,6 +602,7 @@ async function checkAssistantHealth() {
             assistantElements.statusText.textContent = 'Offline';
         }
     } catch (error) {
+        dbg('Health check error: ' + error.message, true);
         assistantOnline = false;
         assistantElements.indicator.classList.remove('online');
         assistantElements.indicator.classList.add('offline');
