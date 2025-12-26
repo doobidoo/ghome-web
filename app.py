@@ -13,6 +13,7 @@ import requests
 import shutil
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from groq import Groq, RateLimitError, APIStatusError
+import google.generativeai as genai
 import edge_tts
 
 from config import (
@@ -81,6 +82,16 @@ def format_api_error(error):
 # Groq API for LLM (set via environment variable)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
+# Gemini API as fallback (set via environment variable)
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+gemini_model = None
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+
+# Track which LLM was used for the last request
+last_llm_used = "none"
 
 # SHODH Cloudflare Memory API (set via environment variable)
 SHODH_URL = os.environ.get("SHODH_CLOUDFLARE_URL", "")
@@ -508,96 +519,139 @@ def format_memories_for_context(memories, max_chars=500):
         return "Relevante Erinnerungen:\n" + "\n".join(context_parts)
     return ""
 
-# ==================== Voice Assistant (Groq + Edge TTS) ====================
+# ==================== Voice Assistant (Groq + Gemini + Edge TTS) ====================
 
-def get_groq_response(text, use_memory=True):
-    """Get response from Groq LLM with optional memory context."""
-    global conversation_history
+def get_gemini_response(messages, system_content):
+    """Get response from Gemini as fallback."""
+    if not gemini_model:
+        raise Exception("Gemini nicht konfiguriert (GEMINI_API_KEY fehlt)")
 
-    if not groq_client:
-        return "Fehler: GROQ_API_KEY Umgebungsvariable nicht gesetzt.", 0, None
+    # Convert messages to Gemini format (combine into single prompt)
+    prompt_parts = [system_content + "\n\n"]
+    for msg in messages:
+        if msg["role"] == "user":
+            prompt_parts.append(f"User: {msg['content']}\n")
+        elif msg["role"] == "assistant":
+            prompt_parts.append(f"Assistant: {msg['content']}\n")
+    prompt_parts.append("Assistant: ")
 
-    try:
-        # Check if this is an explicit memory store request
-        do_store, store_reason = should_store_memory(text)
-        do_recall, recall_reason = should_recall_memory(text)
+    full_prompt = "".join(prompt_parts)
 
-        # Build system message with persona and memory context
-        system_content = ASSISTANT_PERSONA
-
-        # Handle explicit memory triggers
-        if store_reason == "explicit":
-            memory_content = extract_memory_content(text)
-            system_content += "\n\nDer Benutzer möchte, dass du dir etwas merkst. Bestätige kurz und professionell."
-
-        memory_count = 0
-        if use_memory and SHODH_API_KEY and do_recall:
-            # Recall relevant memories
-            memories = shodh_recall(text, limit=3)
-            memory_count = len(memories)
-            memory_context = format_memories_for_context(memories)
-            if memory_context:
-                system_content += f"\n\n{memory_context}"
-
-        # Build messages with conversation history
-        messages = [{"role": "system", "content": system_content}]
-
-        # Add recent conversation history
-        for exchange in conversation_history[-MAX_HISTORY:]:
-            messages.append({"role": "user", "content": exchange["user"]})
-            messages.append({"role": "assistant", "content": exchange["assistant"]})
-
-        # Add current user message
-        messages.append({"role": "user", "content": text})
-
-        chat_completion = groq_client.chat.completions.create(
-            messages=messages,
-            model="llama-3.3-70b-versatile",
+    response = gemini_model.generate_content(
+        full_prompt,
+        generation_config=genai.types.GenerationConfig(
             temperature=0.7,
-            max_tokens=200,
+            max_output_tokens=200,
         )
-        response = chat_completion.choices[0].message.content
+    )
+    return response.text
 
-        # Store in conversation history
-        conversation_history.append({"user": text, "assistant": response})
-        if len(conversation_history) > MAX_HISTORY:
-            conversation_history = conversation_history[-MAX_HISTORY:]
+def get_llm_response(text, use_memory=True):
+    """Get response from LLM with Gemini fallback on Groq rate limit."""
+    global conversation_history, last_llm_used
 
-        # Store in SHODH memory based on trigger patterns
-        memory_stored = False
-        if use_memory and SHODH_API_KEY and do_store:
-            try:
-                if store_reason == "explicit":
-                    # Store only the extracted content for explicit triggers
-                    # Reformulate to third-person factual statement
-                    memory_content = extract_memory_content(text)
-                    shodh_remember(
-                        memory_content,
-                        memory_type="Learning",
-                        tags=["ghome-assistant", "explicit", "user-info"],
-                        reformulate=True  # LLM reformulates to proper grammar
-                    )
-                else:
-                    # Store conversation for substantive interactions
-                    shodh_remember(
-                        f"Frage: {text}\nAntwort: {response}",
-                        memory_type="Conversation",
-                        tags=["ghome-assistant", "voice"]
-                    )
-                memory_stored = True
-            except:
-                pass  # Don't fail if memory storage fails
+    if not groq_client and not gemini_model:
+        return "Fehler: Weder GROQ_API_KEY noch GEMINI_API_KEY gesetzt.", 0, None
 
-        return response, memory_count, {"stored": memory_stored, "reason": store_reason}
-    except RateLimitError as e:
-        # Handle rate limit with headers
-        raise Exception(format_api_error(e))
-    except APIStatusError as e:
-        # Handle other API errors
-        raise Exception(format_api_error(e))
-    except Exception as e:
-        # Generic errors
-        raise Exception(format_api_error(e))
+    # Check if this is an explicit memory store request
+    do_store, store_reason = should_store_memory(text)
+    do_recall, recall_reason = should_recall_memory(text)
+
+    # Build system message with persona and memory context
+    system_content = ASSISTANT_PERSONA
+
+    # Handle explicit memory triggers
+    if store_reason == "explicit":
+        memory_content = extract_memory_content(text)
+        system_content += "\n\nDer Benutzer möchte, dass du dir etwas merkst. Bestätige kurz und professionell."
+
+    memory_count = 0
+    if use_memory and SHODH_API_KEY and do_recall:
+        # Recall relevant memories
+        memories = shodh_recall(text, limit=3)
+        memory_count = len(memories)
+        memory_context = format_memories_for_context(memories)
+        if memory_context:
+            system_content += f"\n\n{memory_context}"
+
+    # Build messages with conversation history
+    messages = []
+    for exchange in conversation_history[-MAX_HISTORY:]:
+        messages.append({"role": "user", "content": exchange["user"]})
+        messages.append({"role": "assistant", "content": exchange["assistant"]})
+    messages.append({"role": "user", "content": text})
+
+    response = None
+    groq_error = None
+
+    # Try Groq first
+    if groq_client:
+        try:
+            groq_messages = [{"role": "system", "content": system_content}] + messages
+            chat_completion = groq_client.chat.completions.create(
+                messages=groq_messages,
+                model="llama-3.3-70b-versatile",
+                temperature=0.7,
+                max_tokens=200,
+            )
+            response = chat_completion.choices[0].message.content
+            last_llm_used = "groq"
+        except RateLimitError as e:
+            groq_error = format_api_error(e)
+            print(f"Groq rate limit, trying Gemini: {groq_error}")
+        except APIStatusError as e:
+            groq_error = format_api_error(e)
+            print(f"Groq API error, trying Gemini: {groq_error}")
+
+    # Fallback to Gemini if Groq failed or unavailable
+    if response is None and gemini_model:
+        try:
+            response = get_gemini_response(messages, system_content)
+            last_llm_used = "gemini"
+            if groq_error:
+                print(f"Gemini fallback successful after Groq error")
+        except Exception as e:
+            # Both failed
+            if groq_error:
+                raise Exception(f"{groq_error} | Gemini-Fallback auch fehlgeschlagen: {str(e)}")
+            raise Exception(format_api_error(e))
+
+    if response is None:
+        raise Exception("Kein LLM verfügbar")
+
+    # Store in conversation history
+    conversation_history.append({"user": text, "assistant": response})
+    if len(conversation_history) > MAX_HISTORY:
+        conversation_history = conversation_history[-MAX_HISTORY:]
+
+    # Store in SHODH memory based on trigger patterns
+    memory_stored = False
+    if use_memory and SHODH_API_KEY and do_store:
+        try:
+            if store_reason == "explicit":
+                memory_content = extract_memory_content(text)
+                shodh_remember(
+                    memory_content,
+                    memory_type="Learning",
+                    tags=["ghome-assistant", "explicit", "user-info"],
+                    reformulate=True
+                )
+            else:
+                shodh_remember(
+                    f"Frage: {text}\nAntwort: {response}",
+                    memory_type="Conversation",
+                    tags=["ghome-assistant", "voice"]
+                )
+            memory_stored = True
+        except:
+            pass
+
+    return response, memory_count, {"stored": memory_stored, "reason": store_reason}
+
+# Keep old function name for compatibility
+def get_groq_response(text, use_memory=True):
+    """Wrapper for backward compatibility."""
+    return get_llm_response(text, use_memory)
 
 async def generate_tts_audio(text, output_file):
     """Generate TTS audio using Edge TTS."""
@@ -617,43 +671,65 @@ def text_to_speech(text):
 @app.route('/api/assistant/health')
 def assistant_health():
     """Check if Voice Assistant is available."""
-    if not groq_client:
-        return jsonify({"api_available": False, "error": "GROQ_API_KEY not set"})
-    try:
-        # Test Groq connection
-        test = groq_client.chat.completions.create(
-            messages=[{"role": "user", "content": "test"}],
-            model="llama-3.3-70b-versatile",
-            max_tokens=5,
-        )
+    if not groq_client and not gemini_model:
+        return jsonify({"api_available": False, "error": "Weder GROQ_API_KEY noch GEMINI_API_KEY gesetzt"})
 
-        # Check SHODH memory status
-        memory_available = False
-        memory_count = 0
-        if SHODH_API_KEY:
-            try:
-                response = requests.get(
-                    f"{SHODH_URL}/api/stats",
-                    headers={"Authorization": f"Bearer {SHODH_API_KEY}"},
-                    timeout=3
-                )
-                if response.status_code == 200:
-                    stats = response.json()
-                    memory_available = True
-                    memory_count = stats.get("total_memories", 0)
-            except:
-                pass
+    groq_available = False
+    gemini_available = False
+    llm_info = []
 
-        return jsonify({
-            "api_available": True,
-            "llm": "Groq (llama-3.3-70b)",
-            "tts": "Edge TTS",
-            "voice": TTS_VOICE,
-            "memory_available": memory_available,
-            "memory_count": memory_count
-        })
-    except Exception as e:
-        return jsonify({"api_available": False, "error": str(e)})
+    # Test Groq connection
+    if groq_client:
+        try:
+            test = groq_client.chat.completions.create(
+                messages=[{"role": "user", "content": "test"}],
+                model="llama-3.3-70b-versatile",
+                max_tokens=5,
+            )
+            groq_available = True
+            llm_info.append("Groq (llama-3.3-70b)")
+        except RateLimitError:
+            llm_info.append("Groq (Rate-Limited)")
+        except:
+            pass
+
+    # Test Gemini connection
+    if gemini_model:
+        try:
+            # Just check if model is configured, don't make a test call
+            gemini_available = True
+            llm_info.append("Gemini (1.5-flash)")
+        except:
+            pass
+
+    # Check SHODH memory status
+    memory_available = False
+    memory_count = 0
+    if SHODH_API_KEY:
+        try:
+            response = requests.get(
+                f"{SHODH_URL}/api/stats",
+                headers={"Authorization": f"Bearer {SHODH_API_KEY}"},
+                timeout=3
+            )
+            if response.status_code == 200:
+                stats = response.json()
+                memory_available = True
+                memory_count = stats.get("total_memories", 0)
+        except:
+            pass
+
+    return jsonify({
+        "api_available": groq_available or gemini_available,
+        "groq_available": groq_available,
+        "gemini_available": gemini_available,
+        "llm": " + ".join(llm_info) if llm_info else "Nicht verfügbar",
+        "last_llm_used": last_llm_used,
+        "tts": "Edge TTS",
+        "voice": TTS_VOICE,
+        "memory_available": memory_available,
+        "memory_count": memory_count
+    })
 
 @app.route('/api/assistant/chat', methods=['POST'])
 def assistant_chat():
