@@ -12,7 +12,7 @@ import uuid
 import requests
 import shutil
 from flask import Flask, render_template, jsonify, request, send_from_directory
-from groq import Groq
+from groq import Groq, RateLimitError, APIStatusError
 import edge_tts
 
 from config import (
@@ -32,13 +32,32 @@ def format_api_error(error):
     if error_str.startswith(('API-Limit', 'API-Auth', 'Zeitüberschreitung', 'Verbindungsfehler', 'Fehler bei der')):
         return error_str
 
-    # Rate limit errors
+    # Handle RateLimitError with headers
+    if isinstance(error, RateLimitError):
+        try:
+            headers = error.response.headers if hasattr(error, 'response') else {}
+            remaining = headers.get('x-ratelimit-remaining-requests', '?')
+            limit = headers.get('x-ratelimit-limit-requests', '?')
+            reset_time = headers.get('x-ratelimit-reset-requests', '')
+            retry_after = headers.get('retry-after', '')
+
+            # Build informative message
+            if retry_after:
+                return f"API-Limit erreicht ({remaining}/{limit} Requests). Retry in {retry_after}s."
+            elif reset_time:
+                return f"API-Limit erreicht ({remaining}/{limit} Requests). Reset in {reset_time}."
+            else:
+                return f"API-Limit erreicht ({remaining}/{limit} Requests). Bitte später versuchen."
+        except:
+            pass  # Fall through to string parsing
+
+    # Rate limit errors (fallback to string parsing)
     if 'rate_limit' in error_str.lower() or '429' in error_str:
         # Try to extract wait time
         wait_match = re.search(r'try again in (\d+m?\d*\.?\d*s?)', error_str, re.IGNORECASE)
         if wait_match:
             wait_time = wait_match.group(1)
-            return f"API-Limit erreicht. Bitte warte {wait_time} und versuch es nochmal."
+            return f"API-Limit erreicht. Bitte warte {wait_time}."
         return "API-Limit erreicht. Bitte warte kurz und versuch es nochmal."
 
     # Authentication errors
@@ -570,8 +589,14 @@ def get_groq_response(text, use_memory=True):
                 pass  # Don't fail if memory storage fails
 
         return response, memory_count, {"stored": memory_stored, "reason": store_reason}
+    except RateLimitError as e:
+        # Handle rate limit with headers
+        raise Exception(format_api_error(e))
+    except APIStatusError as e:
+        # Handle other API errors
+        raise Exception(format_api_error(e))
     except Exception as e:
-        # Use format_api_error for user-friendly messages
+        # Generic errors
         raise Exception(format_api_error(e))
 
 async def generate_tts_audio(text, output_file):
